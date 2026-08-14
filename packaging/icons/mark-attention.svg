@@ -1,9 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-  <!-- Cadent mark - attention. Wayfinder #73, geometry A.
-       One silhouette across all three states (#69): only the fill changes. -->
-  <rect x="9" y="2.5" width="6" height="10.5" rx="3" fill="#cc5f14"/>
-  <path d="M5.5 10.5 a6.5 6.5 0 0 0 13 0" fill="none" stroke="#cc5f14"
-        stroke-width="2" stroke-linecap="round"/>
-  <rect x="11" y="16.5" width="2" height="3.5" fill="#cc5f14"/>
-  <rect x="7.5" y="19.6" width="9" height="2.2" rx="1.1" fill="#cc5f14"/>
+  <!-- Cadent mark - attention. Same cradle as ready; the flow lines give way
+       to an exclamation, centred on 21 in the 18.6-23.4 state zone.
+
+       This is the state that used to carry an orange fill. Colour left the
+       tray when the mark unified across platforms, so the exclamation is now
+       the whole signal - the tooltip carries the words. -->
+  <rect x="9.48" y="4.02" width="5.04" height="8.82" rx="2.52" fill="#000"/>
+  <path d="M6.54 10.74 a5.46 5.46 0 0 0 10.92 0" fill="none" stroke="#000"
+        stroke-width="1.68" stroke-linecap="round"/>
+  <rect x="11.16" y="15.78" width="1.68" height="2.94" fill="#000"/>
+  <rect x="8.22" y="18.38" width="7.56" height="1.85" rx="0.92" fill="#000"/>
+  <rect x="19.8" y="7.5" width="2.4" height="6.5" rx="1.2" fill="#000"/>
+  <circle cx="21" cy="17.2" r="1.5" fill="#000"/>
 </svg>

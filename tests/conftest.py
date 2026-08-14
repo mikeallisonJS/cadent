@@ -464,6 +464,12 @@ class FakeDesktop:
     def __init__(self):
         self.opened: list = []
         self.permission_settings_opens = 0
+        # The tray ink a test wants this desktop to be sitting on, and the
+        # callback the app registered — so a test can drive a taskbar theme
+        # change without a registry.
+        self.ink = "#ffffff"
+        self.ink_watcher = None
+        self.ink_watch_stops = 0
 
     def open_path(self, path):
         self.opened.append(path)
@@ -479,6 +485,16 @@ class FakeDesktop:
 
     def animations_enabled(self):
         return True
+
+    def tray_ink(self):
+        return self.ink
+
+    def watch_tray_ink(self, on_change):
+        self.ink_watcher = on_change
+
+    def stop_watching_tray_ink(self):
+        self.ink_watcher = None
+        self.ink_watch_stops += 1
 
 
 def make_platform(**overrides):
@@ -556,7 +572,7 @@ def pin_darwin_ui_platform(monkeypatch, *, granted=True, running=None,
         mic_permission_hint="check Microphone permission for your terminal "
                             "or IDE in System Settings",
         tray_click_toggles_pause=False,
-        tray_icon_is_template=True,
+        tray_icon_painted_by_os=True,
         modifier_captions={"ctrl": "Ctrl", "shift": "Shift",
                            "alt": "Option", "option": "Option",
                            "win": "Cmd", "cmd": "Cmd"},

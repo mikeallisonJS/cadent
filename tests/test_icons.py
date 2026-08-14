@@ -10,6 +10,7 @@ import struct
 from pathlib import Path
 
 import pytest
+from PySide6.QtCore import QSize
 from PySide6.QtGui import QImage
 
 from cadent import icons
@@ -185,22 +186,14 @@ def test_write_icns_round_trips_what_it_was_given(qt_app, build_icons, tmp_path)
     assert QImage.fromData(entries[-1]["payload"], "PNG").width() == 1024
 
 
-# ---- the darwin template set (#164) ----------------------------------------
+# ---- one silhouette set, painted per platform (supersedes #164) -------------
 
-def test_every_template_state_ships_every_size(qt_app):
-    """The menu-bar mask set: same size discipline as the coloured set."""
-    for state in icons.STATES:
-        for size in icons.SIZES:
-            img = QImage(str(icons.png_path(state, size, template=True)))
-            assert not img.isNull(), f"missing template raster {state}@{size}"
-            assert (img.width(), img.height()) == (size, size)
-
-
-def test_template_states_differ_by_shape_not_colour(qt_app):
-    """A template icon has only alpha to speak with, so the three states must
-    have three silhouettes — flow lines, pause bars, the exclamation."""
+def test_states_differ_by_shape_not_colour(qt_app):
+    """Colour says nothing about the state on either platform now, so the
+    three states must have three silhouettes — flow lines, pause bars, the
+    exclamation. This used to hold only for the darwin-only template set."""
     def alpha_map(state):
-        img = QImage(str(icons.png_path(state, 24, template=True)))
+        img = QImage(str(icons.png_path(state, 24)))
         return tuple(img.pixelColor(x, y).alpha() > 128
                      for y in range(img.height()) for x in range(img.width()))
 
@@ -211,9 +204,9 @@ def test_template_states_differ_by_shape_not_colour(qt_app):
     assert maps["paused"] != maps["attention"]
 
 
-def test_darwin_tray_icon_is_a_mask_the_colour_columns_are_not(qt_app, monkeypatch):
-    """The fact decides (#164): where the OS adapts template images to the
-    menu bar, the mark is a mask; elsewhere the colours carry the state."""
+def test_darwin_ships_a_mask_everywhere_else_paints_it(qt_app, monkeypatch):
+    """The fact decides who paints: where the OS adapts a mask to the menu
+    bar it gets one, and elsewhere we paint the silhouette ourselves."""
     from conftest import make_platform, pin_darwin_ui_platform
 
     from cadent import platform as platform_pkg
@@ -228,10 +221,37 @@ def test_darwin_tray_icon_is_a_mask_the_colour_columns_are_not(qt_app, monkeypat
     assert icons.state_icon("ready").isMask() is False
 
 
-def test_the_app_icon_stays_coloured_even_on_darwin(qt_app, monkeypatch):
+def test_the_tray_mark_is_painted_in_the_desktops_ink(qt_app, monkeypatch):
+    """Where we paint it ourselves, the ink is whatever the desktop says the
+    tray surface needs — and a second ink must not be served the first one
+    back out of the cache."""
+    from conftest import make_platform
+
+    from cadent import platform as platform_pkg
+
+    plat = make_platform()
+    monkeypatch.setattr(platform_pkg, "_current", plat)
+    for ink in ("#ff0000", "#00ff00"):
+        plat.desktop.ink = ink
+        img = icons.state_icon("ready").pixmap(QSize(24, 24), 1.0).toImage()
+        painted = {img.pixelColor(x, y).name()
+                   for y in range(img.height()) for x in range(img.width())
+                   # Fully opaque only: premultiplied storage rounds the
+                   # channels of a partly transparent edge pixel by a step.
+                   if img.pixelColor(x, y).alpha() == 255}
+        assert painted == {ink}, f"tray mark not painted in {ink}"
+
+
+def test_the_app_icon_stays_the_brand_colour_even_on_darwin(qt_app, monkeypatch):
     """Windows, taskbars and installers want the brand mark, not a mask —
-    only the menu bar gets the template treatment."""
+    only the menu bar gets one."""
     from conftest import pin_darwin_ui_platform
 
     pin_darwin_ui_platform(monkeypatch)
-    assert icons.app_icon().isMask() is False
+    icon = icons.app_icon()
+    assert icon.isMask() is False
+    img = icon.pixmap(QSize(24, 24), 1.0).toImage()
+    painted = {img.pixelColor(x, y).name()
+               for y in range(img.height()) for x in range(img.width())
+               if img.pixelColor(x, y).alpha() == 255}
+    assert painted == {icons.BRAND_INK}

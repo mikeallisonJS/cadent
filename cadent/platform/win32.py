@@ -13,7 +13,9 @@ from __future__ import annotations
 import ctypes
 import logging
 import sys
+import threading
 import winreg
+from collections.abc import Callable
 from ctypes import wintypes
 from pathlib import Path
 
@@ -410,6 +412,16 @@ class Win32SingleInstance:
 # ---- desktop environment ------------------------------------------------------
 
 class Win32Desktop:
+    # The taskbar's colour mode. `AppsUseLightTheme` sits beside it and is the
+    # one Qt reports through colorScheme(); the two disagree often enough that
+    # reading the wrong one puts a black icon on a black taskbar.
+    _PERSONALIZE = (r"SOFTWARE\Microsoft\Windows\CurrentVersion\Themes"
+                    r"\Personalize")
+
+    def __init__(self) -> None:
+        self._ink_thread: threading.Thread | None = None
+        self._ink_stop: int | None = None
+
     def open_path(self, path: Path) -> None:
         try:
             import os
@@ -466,6 +478,96 @@ class Win32Desktop:
         except Exception:
             return True
 
+    def tray_ink(self) -> str:
+        """Black on a light taskbar, white on a dark one — and whatever the
+        contrast theme draws text with when one is on."""
+        if self.high_contrast():
+            # A contrast theme paints the taskbar from its own palette, so
+            # neither black nor white is safe. COLOR_WINDOWTEXT is what that
+            # theme writes text in, and the tray sits among text.
+            try:
+                COLOR_WINDOWTEXT = 8
+                # COLORREF is 0x00BBGGRR — the red channel is the low byte.
+                bgr = int(ctypes.windll.user32.GetSysColor(COLOR_WINDOWTEXT))
+                r, g, b = bgr & 0xFF, (bgr >> 8) & 0xFF, (bgr >> 16) & 0xFF
+                return f"#{r:02x}{g:02x}{b:02x}"
+            except Exception:
+                log.debug("GetSysColor(COLOR_WINDOWTEXT) failed", exc_info=True)
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                self._PERSONALIZE) as handle:
+                light = int(winreg.QueryValueEx(
+                    handle, "SystemUsesLightTheme")[0])
+        except Exception:
+            # Absent on a fresh Windows 11, whose taskbar is dark. Guessing
+            # light here would paint black on black.
+            light = 0
+        return "#000000" if light else "#ffffff"
+
+    def watch_tray_ink(self, on_change: Callable[[], None]) -> None:
+        """Watch the Personalize key on a thread of our own.
+
+        `RegNotifyChangeKeyValue` rather than a `WM_SETTINGCHANGE` filter: the
+        message route needs a window and a Qt event loop, and this package
+        stays Qt-free (ADR 0005). The callback lands on this thread, exactly
+        as `HotkeyTap.start`'s does."""
+        if self._ink_thread is not None:
+            return
+        self._ink_stop = ctypes.windll.kernel32.CreateEventW(
+            None, True, False, None)
+        self._ink_thread = threading.Thread(
+            target=self._watch_ink, args=(on_change,), daemon=True,
+            name="cadent-tray-ink")
+        self._ink_thread.start()
+
+    def _watch_ink(self, on_change: Callable[[], None]) -> None:
+        REG_NOTIFY_CHANGE_LAST_SET = 0x00000004
+        WAIT_OBJECT_0 = 0
+        INFINITE = 0xFFFFFFFF
+        kernel32 = ctypes.windll.kernel32
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, self._PERSONALIZE)
+        except OSError:
+            log.debug("no Personalize key to watch; the tray ink will not "
+                      "follow the taskbar", exc_info=True)
+            return
+        event = kernel32.CreateEventW(None, True, False, None)
+        # The stop event shares the wait so a quit never blocks on a theme
+        # change that may not come for hours.
+        handles = (wintypes.HANDLE * 2)(wintypes.HANDLE(event),
+                                        wintypes.HANDLE(self._ink_stop))
+        try:
+            with key:
+                while True:
+                    kernel32.ResetEvent(event)
+                    # Re-armed every pass: one registration yields one
+                    # notification and then forgets us.
+                    status = ctypes.windll.advapi32.RegNotifyChangeKeyValue(
+                        wintypes.HKEY(int(key)), False,
+                        REG_NOTIFY_CHANGE_LAST_SET, wintypes.HANDLE(event),
+                        True)
+                    if status != 0:
+                        log.debug("RegNotifyChangeKeyValue failed (%s)", status)
+                        return
+                    if kernel32.WaitForMultipleObjects(
+                            2, handles, False, INFINITE) != WAIT_OBJECT_0:
+                        return          # stop signalled, or the wait failed
+                    on_change()
+        except Exception:
+            log.debug("tray ink watch ended", exc_info=True)
+        finally:
+            kernel32.CloseHandle(event)
+
+    def stop_watching_tray_ink(self) -> None:
+        if self._ink_stop:
+            ctypes.windll.kernel32.SetEvent(self._ink_stop)
+        thread, self._ink_thread = self._ink_thread, None
+        if thread is not None:
+            thread.join(timeout=1.0)
+        if self._ink_stop:
+            ctypes.windll.kernel32.CloseHandle(self._ink_stop)
+            self._ink_stop = None
+
 
 # ---- the assembled platform ---------------------------------------------------
 
@@ -491,7 +593,7 @@ CAPABILITIES = Capabilities(
     # Mac-authored "<option>" must read as the key it lands on here.
     modifier_captions={"ctrl": "Ctrl", "shift": "Shift", "alt": "Alt",
                        "option": "Alt", "win": "Win", "cmd": "Win"},
-    tray_icon_is_template=False,
+    tray_icon_painted_by_os=False,
     # Windows has two theme settings and Qt's colorScheme reports the *app*
     # one, so a user running a dark taskbar with light apps who picks System
     # correctly gets a light Cadent. Without this line that reads as a bug.

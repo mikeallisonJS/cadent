@@ -87,13 +87,14 @@ BASE: dict[str, object] = {
     "min_visible_ms": 400,
     "transient_ms": 1000,      # Cancelled
     "paused_ms": 1500,
-    # --- tray state colours (spec §3.1) ------------------------------------
-    # Theme-agnostic and taskbar-agnostic: the only colours in the set placed
-    # on a background we cannot query, so each clears 3:1 against a near-black
-    # AND a near-white taskbar. See test_theme_tokens.py for the proof.
-    "tray_ready": "#7a5cff",
-    "tray_paused": "#8b849e",
-    "tray_attention": "#cc5f14",
+    # --- the brand mark's ink (spec §2) -------------------------------------
+    # Theme-agnostic and taskbar-agnostic: the window / taskbar / Alt-Tab icon
+    # is the one mark placed on a background we cannot query, so it clears 3:1
+    # against a near-black AND a near-white taskbar. See test_theme_tokens.py.
+    # The tray's own mark is not here — it takes its ink from the surface it
+    # sits on (ADR 0006), which is why the paused and attention colours that
+    # used to keep this company are gone.
+    "brand": "#7a5cff",
 }
 
 DARK: dict[str, str] = {
@@ -278,7 +279,8 @@ FOCUS_SURFACES: tuple[str, ...] = (
 )
 FOCUS_ON_ACCENT_SURFACES: tuple[str, ...] = ("accent_fill_a", "accent_fill_b")
 
-TRAY_STATES: tuple[str, ...] = ("tray_ready", "tray_paused", "tray_attention")
+# Marks that land on a taskbar, whose colour we cannot ask about.
+TASKBAR_MARKS: tuple[str, ...] = ("brand",)
 
 
 def audit(theme: str) -> list[tuple[str, str, float, float]]:
@@ -293,11 +295,11 @@ def audit(theme: str) -> list[tuple[str, str, float, float]]:
     return rows
 
 
-def tray_audit() -> list[tuple[str, float, float]]:
-    """(state, ratio on a dark taskbar, ratio on a light taskbar)."""
-    return [(state, contrast(BASE[state], TASKBAR_DARK),
-             contrast(BASE[state], TASKBAR_LIGHT))
-            for state in TRAY_STATES]
+def taskbar_audit() -> list[tuple[str, float, float]]:
+    """(token, ratio on a dark taskbar, ratio on a light taskbar)."""
+    return [(name, contrast(BASE[name], TASKBAR_DARK),
+             contrast(BASE[name], TASKBAR_LIGHT))
+            for name in TASKBAR_MARKS]
 
 
 def print_audit() -> None:
@@ -307,11 +309,11 @@ def print_audit() -> None:
         for fg, bg, ratio, want in audit(theme):
             flag = "ok  " if ratio >= want else "FAIL"
             print(f"    {flag} {fg:>20} on {bg:<16} {ratio:5.2f}  (want {want})")
-    print("\n  TRAY (theme-agnostic, both taskbar polarities)")
-    for state, dark, light in tray_audit():
+    print("\n  TASKBAR (theme-agnostic, both polarities)")
+    for name, dark, light in taskbar_audit():
         flag = "ok  " if min(dark, light) >= 3.0 else "FAIL"
-        print(f"    {flag} {state:<16} {BASE[state]}  dark {dark:4.2f}  "
-              f"light {light:4.2f}   L={luminance(str(BASE[state])):.3f}")
+        print(f"    {flag} {name:<16} {BASE[name]}  dark {dark:4.2f}  "
+              f"light {light:4.2f}   L={luminance(str(BASE[name])):.3f}")
 
 
 if __name__ == "__main__":       # pragma: no cover - developer convenience

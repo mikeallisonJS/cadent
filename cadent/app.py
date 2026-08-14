@@ -70,6 +70,7 @@ class _Bridge(QObject):
     download_started = Signal(str)             # what — a fetch is under way
     download_progress = Signal(str, object)    # what, Progress (#115)
     download_finished = Signal(str)            # what — however it ended
+    tray_ink_changed = Signal()                # the taskbar's colour mode moved
 
 
 class CadentApp:
@@ -757,6 +758,16 @@ class CadentApp:
         # user chose and never said so (§7.2).
         self.tray.set_fault("config-unreadable", not self.store.readable)
         self.tray.show()
+        # The tray mark is painted to the surface it sits on, so it has to be
+        # repainted when that surface changes colour. The watcher calls back
+        # on its own thread; the signal is what gets it onto this one.
+        self.bridge.tray_ink_changed.connect(self.tray.refresh)
+        self.platform.desktop.watch_tray_ink(self.bridge.tray_ink_changed.emit)
+        # A contrast theme changes what the ink resolves to as well, and that
+        # arrives through the theme manager rather than the registry. Wired
+        # here, not beside the other theme subscriptions, because those are
+        # connected before this tray exists.
+        self.theme.changed.connect(self.tray.refresh)
 
     def _toggle_pause(self, checked: bool) -> None:
         self.store.set("paused", checked)
@@ -1001,3 +1012,4 @@ class CadentApp:
         finally:
             self.store.flush()
             self.ptt.stop()
+            self.platform.desktop.stop_watching_tray_ink()

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 from .. import config
@@ -144,6 +145,19 @@ class NullDesktop:
     def animations_enabled(self) -> bool:
         return True
 
+    def tray_ink(self) -> str:
+        """White, because the panels this placeholder meets are usually dark
+        and an invisible tray icon is worse than a slightly wrong one. There
+        is no portable way to ask, so this is a guess and stays one until a
+        real Linux column exists."""
+        return "#ffffff"
+
+    def watch_tray_ink(self, on_change: Callable[[], None]) -> None:
+        pass    # nothing portable to watch
+
+    def stop_watching_tray_ink(self) -> None:
+        pass
+
 
 # Mirrors win32's values on purpose: these are the portable facts the app ran
 # on everywhere before the seam existed. The darwin column of spec §1.3 arrives
@@ -168,7 +182,7 @@ CAPABILITIES = Capabilities(
     tray_click_toggles_pause=True,
     modifier_captions={"ctrl": "Ctrl", "shift": "Shift", "alt": "Alt",
                        "option": "Alt", "win": "Win", "cmd": "Win"},
-    tray_icon_is_template=False,
+    tray_icon_painted_by_os=False,
     # The exception to mirroring win32: copy that *names an OS setting* has no
     # portable Windows answer — a Linux user reading "your Windows app colour
     # mode" is the app claiming a platform it isn't on. Neutral until an

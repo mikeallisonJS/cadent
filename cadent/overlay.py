@@ -104,32 +104,35 @@ class _Glyph(QWidget):
         p.end()
 
     def _mic(self, p: QPainter, u: float, colour: QColor, cleanup: bool) -> None:
-        # With cleanup on, the mic shifts left to make room for the flowing
-        # lines. A subtle mark is no mark at 18px: the placeholder's diagonal
-        # cut through the capsule was invisible, so the cleanup variant needs
-        # a silhouette difference readable at a glance.
-        dx = -4.5 * u if cleanup else 0.0
+        # The tray mark's cradle, at the same 0.84 of the master grid it uses
+        # there, on the box centre — in *both* variants. Cleanup used to shift
+        # the mic left to make room for the flow lines; now the lines have a
+        # zone of their own at 18.6-23.4 and the mic never moves or resizes.
+        # A glyph that changed size when cleanup toggled would read as a
+        # rendering fault, not as information.
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(colour)
-        p.drawRoundedRect(QRectF(9 * u + dx, 2.5 * u, 6 * u, 10.5 * u),
-                          3 * u, 3 * u)
+        p.drawRoundedRect(QRectF(9.48 * u, 4.02 * u, 5.04 * u, 8.82 * u),
+                          2.52 * u, 2.52 * u)
         pen = QPen(colour)
-        pen.setWidthF(2 * u)
+        pen.setWidthF(1.68 * u)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         p.setPen(pen)
         p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawArc(QRectF(5.5 * u + dx, 4 * u, 13 * u, 13 * u), 0, -180 * 16)
+        p.drawArc(QRectF(6.54 * u, 5.28 * u, 10.92 * u, 10.92 * u), 0, -180 * 16)
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(colour)
-        p.drawRoundedRect(QRectF(11 * u + dx, 16.5 * u, 2 * u, 3.5 * u), 0, 0)
-        p.drawRoundedRect(QRectF(7.5 * u + dx, 19.6 * u, 9 * u, 2.2 * u),
-                          1.1 * u, 1.1 * u)
+        p.drawRoundedRect(QRectF(11.16 * u, 15.78 * u, 1.68 * u, 2.94 * u), 0, 0)
+        p.drawRoundedRect(QRectF(8.22 * u, 18.38 * u, 7.56 * u, 1.85 * u),
+                          0.92 * u, 0.92 * u)
         if cleanup:
-            # Three lines flowing out of the mic. At 18px a subtle mark is no
-            # mark — the placeholder's diagonal cut through the capsule was
-            # invisible — so the cleanup variant differs in silhouette.
-            for width, y in ((9, 7.5), (7, 12), (5, 16.5)):
-                p.drawRoundedRect(QRectF(14 * u, y * u, width * u, 2 * u), u, u)
+            # Three lines flowing out of the mic — the same taper the tray's
+            # Ready mark carries. A subtle mark is no mark at 18px: the
+            # placeholder's diagonal cut through the capsule was invisible, so
+            # the cleanup variant differs in silhouette.
+            for width, y in ((4.8, 7.5), (3.6, 12), (2.4, 16.5)):
+                p.drawRoundedRect(
+                    QRectF(18.6 * u, y * u, width * u, 2 * u), u, u)
 
     def _warning(self, p: QPainter, u: float, colour: QColor) -> None:
         path = QPainterPath()

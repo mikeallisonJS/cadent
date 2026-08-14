@@ -1,11 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
-  <!-- Cadent mark - paused, hand-corrected 16 grid. Wayfinder #73.
-       Every edge on a whole pixel; the cradle thickens 2.0 so it lands on
-       rows 10-12 instead of straddling three rows at half alpha; the base
-       drops to a single pixel row. Used for the 16 and 20 rasters only. -->
-  <rect x="6" y="2" width="4" height="6" rx="2" fill="#8b849e"/>
-  <path d="M4 7 a4 4 0 0 0 8 0" fill="none" stroke="#8b849e"
+  <!-- Cadent mark - paused, hand-corrected 16 grid. Serves 16 and 20.
+
+       Two single-column bars with a single-column gap - the widest the pause
+       can be in the three columns the cradle leaves. The 24 grid's inset and
+       rounding both disappear here; what survives is two verticals, which is
+       all the state has to be. -->
+  <rect x="6" y="2" width="4" height="6" rx="2" fill="#000"/>
+  <path d="M4 7 a4 4 0 0 0 8 0" fill="none" stroke="#000"
         stroke-width="2" stroke-linecap="round"/>
-  <rect x="7" y="11" width="2" height="2" fill="#8b849e"/>
-  <rect x="5" y="13" width="6" height="1" fill="#8b849e"/>
+  <rect x="7" y="11" width="2" height="2" fill="#000"/>
+  <rect x="5" y="13" width="6" height="1" fill="#000"/>
+  <rect x="13" y="5" width="1" height="6" fill="#000"/>
+  <rect x="15" y="5" width="1" height="6" fill="#000"/>
 </svg>

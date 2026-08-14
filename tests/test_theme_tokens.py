@@ -41,20 +41,19 @@ def test_contrast_audit_passes(theme):
     assert not failures, f"{theme}: " + "; ".join(failures)
 
 
-def test_tray_triad_clears_both_taskbar_polarities():
-    """The tray colours are the only ones placed on a background we cannot
-    query, so each must clear 3:1 on a near-black AND a near-white taskbar."""
-    for state, dark, light in tk.tray_audit():
-        assert min(dark, light) >= 3.0, f"{state}: dark {dark:.2f} light {light:.2f}"
+def test_the_brand_mark_clears_both_taskbar_polarities():
+    """The window / taskbar / Alt-Tab icon is the one mark placed on a
+    background we cannot query, so it must clear 3:1 on a near-black AND a
+    near-white taskbar. The tray's mark is exempt — it is painted in an ink
+    taken from the surface it lands on (ADR 0006).
 
-
-def test_tray_triad_luminance_stays_inside_the_both_polarity_band():
-    """Clearing 3:1 against both #1f1f1f and #f3f3f3 confines relative
-    luminance to [0.143, 0.263] — a band barely 1.8x wide. Documented here so
-    a later 'let's brighten the amber' is caught rather than argued about."""
-    for state in tk.TRAY_STATES:
-        lum = tk.luminance(str(tk.BASE[state]))
-        assert 0.143 <= lum <= 0.263, f"{state}: L={lum:.3f}"
+    Clearing 3:1 against both #1f1f1f and #f3f3f3 confines relative luminance
+    to [0.143, 0.263], a band barely 1.8x wide. Asserted rather than described
+    so a later "let's brighten the purple" is caught, not argued about."""
+    for name, dark, light in tk.taskbar_audit():
+        assert min(dark, light) >= 3.0, f"{name}: dark {dark:.2f} light {light:.2f}"
+        lum = tk.luminance(str(tk.BASE[name]))
+        assert 0.143 <= lum <= 0.263, f"{name}: L={lum:.3f}"
 
 
 def test_accent_is_split_between_fill_and_text():
