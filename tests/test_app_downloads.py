@@ -85,6 +85,38 @@ class FakeSettingsWindow:
 FakeWizard = FakeSurface
 
 
+class Deferred:
+    """A `threading.Thread` stand-in that captures the worker instead of
+    running it.
+
+    The races these tests are about all live in the window between a request
+    being registered and its fetch beginning. A real thread makes that window
+    a matter of luck; holding the worker makes it a matter of when the test
+    says so.
+    """
+
+    def __init__(self) -> None:
+        self.workers: list = []
+
+    def __call__(self, target=None, args=(), daemon=False, **_kwargs):
+        self.workers.append(lambda: target(*args))
+        return types.SimpleNamespace(start=lambda: None)
+
+    def run_one(self) -> None:
+        self.workers.pop(0)()
+
+    def run_all(self) -> None:
+        while self.workers:
+            self.run_one()
+
+
+@pytest.fixture
+def deferred(monkeypatch):
+    stub = Deferred()
+    monkeypatch.setattr(threading, "Thread", stub)
+    return stub
+
+
 @pytest.fixture
 def app():
     instance = app_mod.CadentApp.__new__(app_mod.CadentApp)
@@ -92,8 +124,8 @@ def app():
     instance.tray = FakeTray()
     instance.bridge = types.SimpleNamespace(
         stt_failed=Sig(), stt_loaded=Sig(), gpu_offer=Sig(),
-        download_started=Sig(), download_progress=Sig(),
-        download_finished=Sig())
+        speech_load_done=Sig(), download_started=Sig(),
+        download_progress=Sig(), download_finished=Sig())
     instance._stt = None
     instance._stt_lock = threading.Lock()
     instance._downloads = {}
@@ -344,6 +376,94 @@ def test_a_cancel_with_nothing_left_to_stop_answers_settings_too(app):
     app._cancel_speech_download()
 
     assert app.settings_window.speech.cancelled == 1
+
+
+# ---- the register holds the whole request, not just the fetch ---------------
+
+
+def test_a_cancel_before_the_fetch_begins_still_stops_it(app, deferred, monkeypatch):
+    """The window between the request and the first byte is a `make_engine`
+    probe wide. A Cancel landing in it used to find an empty register, tell
+    both surfaces the download was cancelled, and let the fetch run on
+    regardless — #114's defect with a smaller window."""
+    fetched = []
+
+    def prefetch(_model, download):
+        download.raise_if_cancelled()   # `downloads.fetch`'s own first act
+        fetched.append(download)
+
+    monkeypatch.setattr(app_mod, "make_engine", no_model_on_disk)
+    monkeypatch.setattr(stt, "prefetch", prefetch)
+
+    app._download_speech_model()
+    app._cancel_speech_download()       # lands before the worker gets going
+    deferred.run_all()
+
+    assert fetched == []                # not one byte was asked for
+    assert [o for o, _detail in app.bridge.speech_load_done.emitted] \
+        == [app_mod.CANCELLED]
+
+
+def test_a_finishing_worker_does_not_evict_its_replacement(app):
+    """An unconditional pop is how the first of two requests used to take the
+    second one's handle with it, leaving the next Cancel reaching nothing and
+    reporting a cancellation for a download that was still running."""
+    first = app._register(app_mod.SPEECH_MODEL)
+    second = app._register(app_mod.SPEECH_MODEL)
+
+    app._release(app_mod.SPEECH_MODEL, first)
+
+    assert app._downloads[app_mod.SPEECH_MODEL] is second
+
+
+def test_a_new_request_supersedes_the_one_already_running(app, deferred):
+    """`_load_stt` holds the engine lock for the whole download, so queueing
+    the second pick behind the first would leave the pane stuck on a fetch
+    nobody wants any more."""
+    app._download_speech_model()
+    first = app._downloads[app_mod.SPEECH_MODEL]
+
+    app._download_speech_model()
+
+    assert first.cancelled is True
+    assert app._downloads[app_mod.SPEECH_MODEL] is not first
+
+
+def test_a_superseded_request_leaves_the_surfaces_to_the_one_that_took_over(
+        app, deferred, monkeypatch):
+    """It was cancelled because the user picked something else, not because
+    anyone asked for nothing. "Download cancelled." on a pane that is about to
+    say "Downloading…" reads as the new pick having failed."""
+    def superseded_partway(_model, download):
+        app._download_speech_model()    # takes the key, cancels this one
+        download.raise_if_cancelled()
+
+    monkeypatch.setattr(app_mod, "make_engine", no_model_on_disk)
+    monkeypatch.setattr(stt, "prefetch", superseded_partway)
+
+    app._download_speech_model()
+    deferred.run_one()          # only the first worker; the second still waits
+
+    assert app.bridge.speech_load_done.emitted == []
+
+
+def test_a_cancel_the_user_actually_asked_for_is_still_reported(app, deferred,
+                                                                monkeypatch):
+    """The other half of that branch: nothing about superseding makes a real
+    cancellation quieter."""
+    def cancel_partway(_model, download):
+        download.cancel()
+        download.raise_if_cancelled()
+
+    monkeypatch.setattr(app_mod, "make_engine", no_model_on_disk)
+    monkeypatch.setattr(stt, "prefetch", cancel_partway)
+
+    app._download_speech_model()
+    deferred.run_all()
+
+    assert [o for o, _detail in app.bridge.speech_load_done.emitted] \
+        == [app_mod.CANCELLED]
+    assert app._downloads == {}
 
 
 def test_a_hidden_surface_is_told_nothing(app):
