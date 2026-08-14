@@ -66,7 +66,8 @@ class _Bridge(QObject):
     llm_failed = Signal(str)
     gpu_offer = Signal()        # STT landed on CPU with an NVIDIA GPU idle (#55)
     gpu_installed = Signal(str) # support pack install finished; arg = error or ""
-    wizard_download_done = Signal(str, str)    # outcome, detail (#114)
+    speech_load_done = Signal(str, str)        # outcome, detail (#114)
+    download_started = Signal(str)             # what — a fetch is under way
     download_progress = Signal(str, object)    # what, Progress (#115)
     download_finished = Signal(str)            # what — however it ended
 
@@ -159,7 +160,8 @@ class CadentApp:
         self.bridge.llm_failed.connect(self._handle_llm_failure)
         self.bridge.gpu_offer.connect(self._on_gpu_offer)
         self.bridge.gpu_installed.connect(self._on_gpu_installed)
-        self.bridge.wizard_download_done.connect(self._on_wizard_download_done)
+        self.bridge.speech_load_done.connect(self._on_speech_load_done)
+        self.bridge.download_started.connect(self._on_download_started)
         self.bridge.download_progress.connect(self._on_download_progress)
         self.bridge.download_finished.connect(self._on_download_finished)
         # The try-it step is the one place the pill's state also needs a
@@ -279,19 +281,47 @@ class CadentApp:
         download = downloads.Download(
             lambda reading: self.bridge.download_progress.emit(what, reading))
         self._downloads[what] = download
+        self.bridge.download_started.emit(what)
         try:
             yield download
         finally:
             self._downloads.pop(what, None)
             self.bridge.download_finished.emit(what)
 
+    def _speech_surfaces(self) -> list:
+        """Everything on screen that has a speech download to paint.
+
+        The wizard downloads because it was clicked; Settings ▸ Speech is
+        handed a download that whatever the user picked set off. Both want the
+        same three things said to them, so the fan-out is one list rather than
+        two branches that drift.
+        """
+        surfaces = []
+        if self.wizard is not None and self.wizard.isVisible():
+            surfaces.append(self.wizard)
+        window = self.settings_window
+        if window is not None and window.isVisible():
+            surfaces.append(window.speech)
+        return surfaces
+
+    def _on_download_started(self, what: str) -> None:
+        """Settings never asked for this one — a model picked from its own list
+        starts a fetch several layers down — so it is told, rather than
+        assuming from the first byte that lands."""
+        if what != SPEECH_MODEL:
+            return
+        window = self.settings_window
+        if window is not None and window.isVisible():
+            window.speech.mark_download_started()
+
     def _on_download_progress(self, what: str, reading: downloads.Progress) -> None:
         self.tray.set_download(what, reading)
-        # The wizard has one bar, for the one download it started. A cleanup
-        # model arriving in the background must not paint over it.
-        if what == SPEECH_MODEL and self.wizard is not None \
-                and self.wizard.isVisible():
-            self.wizard.report_progress(reading)
+        # One bar per surface, for the one speech download. A cleanup model
+        # arriving in the background must not paint over it.
+        if what != SPEECH_MODEL:
+            return
+        for surface in self._speech_surfaces():
+            surface.report_progress(reading)
 
     def _on_download_finished(self, _what: str) -> None:
         """The tray carries one line, so it simply goes quiet. Anything still
@@ -716,7 +746,7 @@ class CadentApp:
                                   install_gpu_pack=self._on_gpu_download_clicked)
         self.wizard.finished_setup.connect(self._on_wizard_finished)
         self.wizard.download_requested.connect(self._download_model_for_wizard)
-        self.wizard.cancel_requested.connect(self._cancel_wizard_download)
+        self.wizard.cancel_requested.connect(self._cancel_speech_download)
         self.wizard.show()
 
     def _wizard_wants_hotkey(self) -> bool:
@@ -741,37 +771,43 @@ class CadentApp:
         """
         self.store.set("stt_engine", settings_logic.engine_for_model(model))
         self.store.set("stt_model", model)
-        self._stt = None
-        threading.Thread(target=self._load_stt_for_wizard, daemon=True).start()
+        self._download_speech_model()
 
-    def _cancel_wizard_download(self) -> None:
-        """The wizard's Cancel, connected to the fetch it is actually watching.
+    def _cancel_speech_download(self) -> None:
+        """Cancel, from the wizard or from Settings, connected to the fetch
+        those surfaces are actually watching.
 
-        Before #114 this signal had no consumer at all. It now stops one
-        specific download — not whatever happens to be running — and answers
-        immediately when there is nothing left to stop, so the page can never
-        sit on "Cancelling…" waiting for a confirmation that will not come.
+        Before #114 the wizard's signal had no consumer at all. It now stops
+        one specific download — not whatever happens to be running — and
+        answers immediately when there is nothing left to stop, so neither
+        surface can sit on "Cancelling…" waiting for a confirmation that will
+        not come.
         """
         download = self._downloads.get(SPEECH_MODEL)
         if download is not None:
             download.cancel()
             return
-        if self.wizard is not None:
-            self.wizard.mark_download_cancelled()
+        self._on_speech_load_done(CANCELLED, "")
 
-    def _load_stt_for_wizard(self) -> None:
+    def _download_speech_model(self) -> None:
+        """Settings' way out of a dead end: no model on disk at all, or a fetch
+        that failed. The model is already in the config — what is missing is
+        another attempt at it."""
+        self._stt = None
+        threading.Thread(target=self._load_stt_and_report, daemon=True).start()
+
+    def _load_stt_and_report(self) -> None:
         outcome = self._load_stt()
         detail = "" if outcome == LOADED else "see the tray notification"
         # Marshalled through the bridge: _load_stt runs off the UI thread.
-        self.bridge.wizard_download_done.emit(outcome, detail)
+        self.bridge.speech_load_done.emit(outcome, detail)
 
-    def _on_wizard_download_done(self, outcome: str, detail: str) -> None:
-        if self.wizard is None:
-            return
-        if outcome == CANCELLED:
-            self.wizard.mark_download_cancelled()
-        else:
-            self.wizard.mark_download_finished(outcome == LOADED, detail)
+    def _on_speech_load_done(self, outcome: str, detail: str) -> None:
+        for surface in self._speech_surfaces():
+            if outcome == CANCELLED:
+                surface.mark_download_cancelled()
+            else:
+                surface.mark_download_finished(outcome == LOADED, detail)
 
     def _on_wizard_finished(self, completed: bool) -> None:
         self.tray.set_fault("setup-unfinished", not completed)
@@ -806,8 +842,18 @@ class CadentApp:
             self.settings_window.theme_requested.connect(self._on_theme_preference)
             self.settings_window.wizard_requested.connect(self._run_wizard)
             self.settings_window.move_overlay_requested.connect(self._move_overlay)
+            self.settings_window.model_download_requested.connect(
+                self._download_speech_model)
+            self.settings_window.model_download_cancel_requested.connect(
+                self._cancel_speech_download)
             self.settings_window.ctx.dropped_hotwords = self._dropped_hotwords
             self.settings_window.show()
+            # A fetch that began before this window did. The pane has no way to
+            # know — `download_started` fired while there was nobody to hear it
+            # — and a Settings window that opens mid-download showing nothing is
+            # the silence #115 is about.
+            if SPEECH_MODEL in self._downloads:
+                self.settings_window.speech.mark_download_started()
         else:
             self.settings_window.raise_()
             self.settings_window.activateWindow()
@@ -838,9 +884,10 @@ class CadentApp:
             self.ptt.start()
         elif engine == "stt":
             # Detach first so dictations report not-ready instead of using the
-            # old model (same pattern as the #38 crash recovery).
-            self._stt = None
-            threading.Thread(target=self._load_stt, daemon=True).start()
+            # old model (same pattern as the #38 crash recovery). Reported
+            # rather than fired and forgotten since #115: the pane that made
+            # this change is the one owed the outcome.
+            self._download_speech_model()
         elif engine == "llm":
             self.cleaner.model_path = self.config.llm_model_path
             self.cleaner.max_tokens = self.config.llm_max_tokens

@@ -41,11 +41,21 @@ class FakeTray:
         self.shown.append((what, progress))
 
 
-class FakeWizard:
+class FakeSurface:
+    """A wizard model page or a Settings ▸ Speech pane.
+
+    They are one interface on purpose (#115): whatever the app has to say about
+    a speech download, it says the same way to whichever of them is on screen.
+    """
+
     def __init__(self) -> None:
         self.cancelled = 0
+        self.started = 0
         self.finished: list[tuple] = []
         self.readings: list[Progress] = []
+
+    def mark_download_started(self) -> None:
+        self.started += 1
 
     def mark_download_cancelled(self) -> None:
         self.cancelled += 1
@@ -60,6 +70,21 @@ class FakeWizard:
         return True
 
 
+class FakeSettingsWindow:
+    """Only the part app.py reaches for: the pane behind `.speech`."""
+
+    def __init__(self) -> None:
+        self.speech = FakeSurface()
+
+    def isVisible(self) -> bool:  # noqa: N802
+        return True
+
+
+# The wizard is one of the two surfaces, and every test that had one still
+# reads that way.
+FakeWizard = FakeSurface
+
+
 @pytest.fixture
 def app():
     instance = app_mod.CadentApp.__new__(app_mod.CadentApp)
@@ -67,11 +92,13 @@ def app():
     instance.tray = FakeTray()
     instance.bridge = types.SimpleNamespace(
         stt_failed=Sig(), stt_loaded=Sig(), gpu_offer=Sig(),
-        download_progress=Sig(), download_finished=Sig())
+        download_started=Sig(), download_progress=Sig(),
+        download_finished=Sig())
     instance._stt = None
     instance._stt_lock = threading.Lock()
     instance._downloads = {}
     instance.wizard = None
+    instance.settings_window = None
     return instance
 
 
@@ -164,7 +191,7 @@ def test_a_cancel_during_the_load_is_not_reported_as_a_cancellation(app, monkeyp
     def load_after_a_cancel(*_args, **kwargs):
         if kwargs.get("local_files_only"):
             raise OSError("model is not cached locally")
-        app._cancel_wizard_download()      # lands while the engine is loading
+        app._cancel_speech_download()      # lands while the engine is loading
         return types.SimpleNamespace(device="cpu")
 
     app.wizard = FakeWizard()
@@ -178,7 +205,7 @@ def test_a_cancel_during_the_load_is_not_reported_as_a_cancellation(app, monkeyp
 def test_the_wizards_cancel_stops_the_speech_download(app):
     app.wizard = FakeWizard()
     with app._watching(app_mod.SPEECH_MODEL) as download:
-        app._cancel_wizard_download()
+        app._cancel_speech_download()
         assert download.cancelled is True
     # It asks the fetch to stop; it does not tell the page it already has.
     assert app.wizard.cancelled == 0
@@ -190,7 +217,7 @@ def test_the_wizards_cancel_leaves_a_cleanup_download_alone(app):
     """
     app.wizard = FakeWizard()
     with app._watching(app_mod.CLEANUP_MODEL) as cleanup:
-        app._cancel_wizard_download()
+        app._cancel_speech_download()
         assert cleanup.cancelled is False
 
 
@@ -199,7 +226,7 @@ def test_a_cancel_with_nothing_left_to_stop_still_answers_the_wizard(app):
     page sits on "Cancelling…" waiting for a confirmation that never comes."""
     app.wizard = FakeWizard()
 
-    app._cancel_wizard_download()
+    app._cancel_speech_download()
 
     assert app.wizard.cancelled == 1
 
@@ -246,7 +273,87 @@ def test_only_the_speech_download_paints_the_wizards_bar(app):
 def test_a_cancelled_load_tells_the_wizard_so_rather_than_that_it_failed(app):
     app.wizard = FakeWizard()
 
-    app._on_wizard_download_done(app_mod.CANCELLED, "")
+    app._on_speech_load_done(app_mod.CANCELLED, "")
 
     assert app.wizard.cancelled == 1
+    assert app.wizard.finished == []
+
+
+# ---- Settings watches the same download the wizard does ---------------------
+
+
+def test_settings_is_told_when_a_speech_download_begins(app):
+    """The pane never asked for this one: picking a model from its own list
+    sets a fetch off several layers down. Assuming it from the first byte would
+    leave the window blank for however long `model_info` takes."""
+    app.settings_window = FakeSettingsWindow()
+
+    with app._watching(app_mod.SPEECH_MODEL):
+        pass
+
+    assert app.bridge.download_started.emitted == [(app_mod.SPEECH_MODEL,)]
+
+
+def test_both_surfaces_paint_the_same_speech_download(app):
+    """Setup and Settings are one feature with one answer — a download you can
+    watch in the wizard and not in Settings is the gap #115 leaves behind."""
+    app.wizard = FakeWizard()
+    app.settings_window = FakeSettingsWindow()
+
+    app._on_download_progress(app_mod.SPEECH_MODEL, Progress(2, 4))
+
+    assert app.wizard.readings == [Progress(2, 4)]
+    assert app.settings_window.speech.readings == [Progress(2, 4)]
+
+
+def test_a_cleanup_download_paints_neither_of_them(app):
+    app.wizard = FakeWizard()
+    app.settings_window = FakeSettingsWindow()
+
+    app._on_download_progress(app_mod.CLEANUP_MODEL, Progress(1, 4))
+    app._on_download_started(app_mod.CLEANUP_MODEL)
+
+    assert app.wizard.readings == []
+    assert app.settings_window.speech.readings == []
+    assert app.settings_window.speech.started == 0
+
+
+def test_a_speech_download_beginning_reaches_settings_only(app):
+    """The wizard sets its own state the moment its button is clicked, so
+    telling it again would be a second start for one download."""
+    app.wizard = FakeWizard()
+    app.settings_window = FakeSettingsWindow()
+
+    app._on_download_started(app_mod.SPEECH_MODEL)
+
+    assert app.settings_window.speech.started == 1
+    assert app.wizard.readings == []
+
+
+def test_settings_cancel_reaches_the_same_fetch_the_wizards_does(app):
+    app.settings_window = FakeSettingsWindow()
+    with app._watching(app_mod.SPEECH_MODEL) as download:
+        app._cancel_speech_download()
+        assert download.cancelled is True
+    assert app.settings_window.speech.cancelled == 0
+
+
+def test_a_cancel_with_nothing_left_to_stop_answers_settings_too(app):
+    app.settings_window = FakeSettingsWindow()
+
+    app._cancel_speech_download()
+
+    assert app.settings_window.speech.cancelled == 1
+
+
+def test_a_hidden_surface_is_told_nothing(app):
+    """Both surfaces outlive their windows — `self.wizard` is never cleared —
+    and painting a closed one is a state that reappears on the next open."""
+    app.wizard = FakeWizard()
+    app.wizard.isVisible = lambda: False
+
+    app._on_download_progress(app_mod.SPEECH_MODEL, Progress(2, 4))
+    app._on_speech_load_done(app_mod.LOADED, "")
+
+    assert app.wizard.readings == []
     assert app.wizard.finished == []

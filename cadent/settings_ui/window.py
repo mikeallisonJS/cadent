@@ -120,6 +120,11 @@ class SettingsWindow(QDialog):
     theme_requested = Signal(str)
     move_overlay_requested = Signal()
     wizard_requested = Signal()
+    # The Speech pane's download controls. Re-emitted rather than reached for
+    # through `window.speech`, so app.py keeps talking to the window it holds
+    # and the pane stays a detail of it.
+    model_download_requested = Signal()
+    model_download_cancel_requested = Signal()
 
     def __init__(self, store: ConfigStore, *, tokens: dict,
                  devices: list[str] | None = None, history=None,
@@ -146,6 +151,9 @@ class SettingsWindow(QDialog):
         self.vocabulary = VocabularyPane(self.ctx)
         self.overrides = OverridesPane(self.ctx)
         self.history = HistoryPane(self.ctx)
+
+        self.speech.download_requested.connect(self.model_download_requested)
+        self.speech.cancel_requested.connect(self.model_download_cancel_requested)
 
         # A floor plus row-derived sizing, never a fixed width: Windows' Text
         # size setting scales the type and a fixed 220 clips outright at 150%

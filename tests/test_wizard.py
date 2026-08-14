@@ -75,16 +75,37 @@ def test_every_other_page_advances_freely():
         assert state.can_advance(page) is True
 
 
-def test_only_the_gpu_and_hotkey_pages_can_be_skipped():
-    """The model page has no skip — Finish is unreachable without a model, so
-    a completed wizard always leaves a dictation-capable app."""
+def test_the_gpu_model_and_hotkey_pages_can_be_skipped():
     state = WizardState(gpu_eligible=True, permission_needed=True)
     assert state.can_skip(GPU) is True
     assert state.can_skip(HOTKEY) is True
+    # The one gated page is also the one that needs the network, which is why
+    # it is skippable: an offline machine was otherwise walled in on page five.
+    assert state.can_skip(MODEL) is True
     # The permission step needs no Skip: Next is never gated on the grant —
     # the Settings banner carries the nag, the wizard only teaches.
-    for page in (WELCOME, BASICS, PERMISSION, MODEL, DONE):
+    for page in (WELCOME, BASICS, PERMISSION, DONE):
         assert state.can_skip(page) is False
+
+
+def test_skip_withdraws_from_the_model_page_while_a_download_runs():
+    """Same reason Escape goes inert there: walking off a running 3.1 GB fetch
+    by clicking the footer button next to it is the same lost download."""
+    state = WizardState()
+    assert state.can_skip(MODEL) is True
+    state.downloading = True
+    assert state.can_skip(MODEL) is False
+    # The other two are unaffected — no download of theirs is at stake.
+    assert WizardState(gpu_eligible=True, downloading=True).can_skip(GPU) is True
+
+
+def test_skipping_the_model_is_not_a_completed_setup():
+    """Skipping lands exactly where Cancel does: resident in the tray with
+    dictation off and a bold "Finish setup…" to come back through."""
+    state = WizardState()
+    state.pages()                       # skip does not change the sequence
+    assert state.can_skip(MODEL) is True
+    assert state.is_complete(DONE) is False
 
 
 def test_finishing_without_a_model_is_not_a_completed_setup():
@@ -736,6 +757,14 @@ def _at_the_model_page(wizard):
     return wizard
 
 
+def shown_text(wizard):
+    """Every label the current page is showing, as one string."""
+    from PySide6.QtWidgets import QLabel
+
+    return " ".join(lbl.text() for lbl in wizard.findChildren(QLabel)
+                    if lbl.isVisibleTo(wizard))
+
+
 def test_a_running_download_says_how_far_it_has_got(wizard):
     """Anything from 78 MB to 3.1 GB behind the word "Downloading…" and nothing
     else was the whole of #115."""
@@ -814,6 +843,64 @@ def test_a_download_survives_walking_off_the_page_and_back(wizard):
     assert wizard.download_button.text() == "Cancel download"
     assert wizard.download_bar.isVisibleTo(wizard) is True
     assert wizard.download_bar.value() == 25
+
+
+def test_the_model_page_offers_a_way_past_it_when_there_is_no_network(wizard):
+    """The download is the one step that needs the network. Without a Skip an
+    offline machine reaches page five and can go neither forward nor back out
+    except by pressing Escape."""
+    _at_the_model_page(wizard)
+
+    assert wizard.next_button.isEnabled() is False       # still gated
+    assert wizard.skip_button.isVisibleTo(wizard) is True
+    assert shown_text(wizard).count("Settings") == 1     # says where to go later
+
+
+def test_the_skip_goes_away_while_the_download_it_would_abandon_runs(wizard):
+    _at_the_model_page(wizard)
+    wizard._start_download()
+
+    assert wizard.skip_button.isVisibleTo(wizard) is False
+    wizard.mark_download_cancelled()
+    assert wizard.skip_button.isVisibleTo(wizard) is True
+
+
+def test_nobody_with_a_model_is_offered_a_way_out_of_the_page(wizard):
+    """A wizard reopened over a working install lands on this page with the
+    download already done. There is nothing to be stuck on, so nothing to
+    explain."""
+    _at_the_model_page(wizard)
+    wizard.mark_download_finished(True)
+
+    assert wizard.skip_hint.isVisibleTo(wizard) is False
+
+
+def test_skipping_the_model_reaches_a_last_page_that_does_not_claim_one(wizard):
+    """`config.stt_model` still names the default, so the summary page would
+    otherwise report a model that is not on disk — on the one page whose whole
+    job is to say what was set up."""
+    _at_the_model_page(wizard)
+    while wizard.page != DONE:
+        wizard.skip()
+
+    text = shown_text(wizard)
+    assert "none yet" in text
+    assert wizard.store.config.stt_model not in text
+    assert wizard.title.text() == "Almost set up"
+    assert wizard.state.is_complete(DONE) is False
+
+
+def test_finishing_a_skipped_setup_reports_it_as_unfinished(wizard):
+    """Which is what leaves the tray amber with "Finish setup…" on it — a
+    skipped setup must be as recoverable as a cancelled one."""
+    completed = []
+    wizard.finished_setup.connect(completed.append)
+    _at_the_model_page(wizard)
+    while wizard.page != DONE:
+        wizard.skip()
+    wizard.advance()        # Finish
+
+    assert completed == [False]
 
 
 def test_a_reading_that_arrives_after_the_download_is_ignored(wizard):

@@ -6,9 +6,13 @@ never a prompt": the user asked for setup, so setup gets a window.
 
 Two policies do most of the work here:
 
-- **Only the GPU pack and Hotkey pages carry "Skip for now".** The model page
-  has none — Finish is unreachable without a model, so a completed wizard
-  always leaves a dictation-capable app.
+- **Finish is unreachable without a model, but the page is not.** Next still
+  gates on a downloaded model, so a *completed* wizard always leaves a
+  dictation-capable app. The model page carries "Skip for now" alongside it,
+  because the download is the one step that needs the network and an offline
+  machine was otherwise walled in on page five with no way forward and no way
+  out but Escape. Skipping is not completing: it lands in exactly the state a
+  Cancel does.
 - **Cancel leaves the app resident in the tray with dictation disabled**, a
   bold "Finish setup…" first in the tray menu, and amber on the icon. Quitting
   the wizard must never strand anyone.
@@ -57,10 +61,29 @@ PAGE_TITLES = (
     "You're set up",
 )
 
-# Only these two are skippable (§6.3). The permission step needs no Skip:
-# Next is never gated on the grant — the wizard teaches, the Settings banner
-# nags — so a managed Mac that can't grant still finishes setup.
-SKIPPABLE = frozenset({GPU, HOTKEY})
+# The three skippable steps (§6.3). The permission step needs no Skip: Next is
+# never gated on the grant — the wizard teaches, the Settings banner nags — so
+# a managed Mac that can't grant still finishes setup. MODEL is skippable for
+# the opposite reason: it *is* gated, on the one thing a machine with no
+# network cannot produce.
+SKIPPABLE = frozenset({GPU, MODEL, HOTKEY})
+
+# What the model page says about its own Skip. Shown only while there is no
+# model, so a wizard reopened over a working install doesn't offer a way out
+# of a page nobody is stuck on.
+SKIP_MODEL_HINT = (
+    "No connection right now? Skip this for now — Cadent stays in the tray "
+    "with dictation off, and you can download a model later from "
+    "Settings ▸ Speech & cleanup.")
+
+# The last page when the model step was skipped. It is not "You're set up",
+# and the title says so too (SKIPPED_TITLE): dictation does not work yet, and
+# a summary page that congratulates you anyway is the wizard lying about the
+# one thing it exists to establish.
+SKIPPED_TITLE = "Almost set up"
+NO_MODEL_YET = ("Dictation stays off until a speech model is downloaded. "
+                "Open Settings ▸ Speech & cleanup when you're online, or pick "
+                "\"Finish setup…\" from the tray menu to come back here.")
 
 # What the permission page's status line reads (M5 §7). The page re-checks on
 # its own, so granting in System Settings and coming back needs no button.
@@ -108,6 +131,11 @@ class WizardState:
         return True
 
     def can_skip(self, page: int) -> bool:
+        """Skip withdraws while the model page is downloading, for the reason
+        Escape goes inert there: walking off a running 3.1 GB fetch by pressing
+        the footer button next to it is the same lost download."""
+        if page == MODEL and self.downloading:
+            return False
         return page in SKIPPABLE
 
     def can_cancel(self) -> bool:
@@ -297,6 +325,24 @@ class SetupWizard(QDialog):
     def advance(self) -> None:
         if not self.state.can_advance(self.page):
             return
+        self._go_forward()
+
+    def back(self) -> None:
+        self._index = max(self._index - 1, 0)
+        self._render()
+
+    def skip(self) -> None:
+        """**Skip is not Next.** It moves past a page the gate would otherwise
+        hold you on, which is its entire job now that the model page — the only
+        gated one — carries a Skip. Routing it through `advance` made the two
+        buttons agree on the model page and do nothing, forever.
+        """
+        if not self.state.can_skip(self.page):
+            return
+        self._go_forward()
+
+    def _go_forward(self) -> None:
+        """The move itself, once Next or Skip has decided it may happen."""
         if self.page == GPU:
             self._accept_gpu_choice()
         if self.page == DONE:
@@ -304,15 +350,6 @@ class SetupWizard(QDialog):
             return
         self._index = min(self._index + 1, len(self.state.pages()) - 1)
         self._render()
-
-    def back(self) -> None:
-        self._index = max(self._index - 1, 0)
-        self._render()
-
-    def skip(self) -> None:
-        if not self.state.can_skip(self.page):
-            return
-        self.advance()
 
     def _finish(self) -> None:
         self._completed = self.state.is_complete(DONE)
@@ -354,7 +391,8 @@ class SetupWizard(QDialog):
     def _render(self) -> None:
         page = self.page
         pages = self.state.pages()
-        self.title.setText(PAGE_TITLES[page])
+        title = self._title_for(page)
+        self.title.setText(title)
         self.dots.setText(f"Step {self._index + 1} of {len(pages)}")
 
         while self.body_layout.count():
@@ -380,9 +418,8 @@ class SetupWizard(QDialog):
         first_control = builder()
 
         self.back_button.setEnabled(self._index > 0)
-        self.skip_button.setVisible(self.state.can_skip(page))
-        self.next_button.setEnabled(self.state.can_advance(page))
         self.next_button.setText("Finish" if page == DONE else "Next")
+        self._refresh_footer()
 
         # Page changes move focus to the new page's first interactive control
         # and announce it. Without this, focus is stranded on a button that no
@@ -390,8 +427,24 @@ class SetupWizard(QDialog):
         target = first_control or self.next_button
         target.setFocus(Qt.FocusReason.OtherFocusReason)
         a11y.announce(self.title,
-                      f"Step {self._index + 1} of {len(pages)} — {PAGE_TITLES[page]}")
-        self.title.setAccessibleName(PAGE_TITLES[page])
+                      f"Step {self._index + 1} of {len(pages)} — {title}")
+        self.title.setAccessibleName(title)
+
+    def _title_for(self, page: int) -> str:
+        if page == DONE and not self.state.model_downloaded:
+            return SKIPPED_TITLE
+        return PAGE_TITLES[page]
+
+    def _refresh_footer(self) -> None:
+        """The two footer controls the state can change under a standing page.
+
+        Both answers move when a download starts or settles, which is a thing
+        that happens *between* renders — the model page is the only one whose
+        footer is not fixed for as long as you are looking at it.
+        """
+        page = self.page
+        self.skip_button.setVisible(self.state.can_skip(page))
+        self.next_button.setEnabled(self.state.can_advance(page))
 
     def _add(self, widget: QWidget) -> QWidget:
         self.body_layout.addWidget(widget)
@@ -550,6 +603,13 @@ class SetupWizard(QDialog):
 
         self.download_status = label("", "RowHint")
         self._add(self.download_status)
+
+        # Names the footer's Skip and what taking it costs. The button alone
+        # says "Skip for now" on a page whose whole subject is a download, and
+        # the thing anyone offline needs to know is where the model comes from
+        # afterwards.
+        self.skip_hint = label(SKIP_MODEL_HINT, "RowHint")
+        self._add(self.skip_hint)
         self.body_layout.addStretch()
         # Every page is rebuilt on every visit, so a download you walked away
         # from has to be read back off the state rather than remembered by
@@ -573,16 +633,25 @@ class SetupWizard(QDialog):
         return self.change_hotkey
 
     def _build_done(self) -> QWidget | None:
-        # By the name it was picked under, not by its filename: `distil-
-        # small.en` on the last page of setup is the thing #111 removed from
-        # the page before it.
-        picked = models.speech_model(self.store.config.stt_model)
-        model = picked.title if picked is not None else self.store.config.stt_model
+        if self.state.model_downloaded:
+            # By the name it was picked under, not by its filename: `distil-
+            # small.en` on the last page of setup is the thing #111 removed
+            # from the page before it.
+            picked = models.speech_model(self.store.config.stt_model)
+            model = picked.title if picked is not None else self.store.config.stt_model
+        else:
+            # The model page was skipped. `config.stt_model` still names the
+            # default, and printing it here would have the summary page — the
+            # one page whose entire job is to say what was set up — name a
+            # model that is not on disk.
+            model = "none yet"
         device = self.store.config.input_device or "System default"
         self._add(label(
             f"Microphone: {device}\nSpeech model: {model}\n"
             f"Hotkey: hold {describe_combo(self.store.config.hotkey)} "
             "and speak.", "RowDesc"))
+        if not self.state.model_downloaded:
+            self._add(label(NO_MODEL_YET, "RowHint"))
         self.body_layout.addStretch()
         return None
 
@@ -608,6 +677,7 @@ class SetupWizard(QDialog):
         self.state.cancelling = False
         self._progress = Progress(0, 0)
         self._show_download_state()
+        self._refresh_footer()      # Skip withdraws for as long as this runs
         a11y.announce(self.download_status, "Downloading the speech model.")
         self.download_requested.emit(self.model.currentData())
 
@@ -646,7 +716,7 @@ class SetupWizard(QDialog):
         if self.page == MODEL:
             self._show_download_state(outcome)
             a11y.announce(self.download_status, outcome)
-        self.next_button.setEnabled(self.state.can_advance(self.page))
+        self._refresh_footer()
 
     def _show_download_state(self, outcome: str | None = None) -> None:
         """Paint the model page from the state. The one place that decides what
@@ -659,6 +729,8 @@ class SetupWizard(QDialog):
         self.download_button.setText(
             "Cancel download" if running else "Download model")
         self.download_button.setEnabled(not self.state.cancelling)
+        # Nobody with a model is stuck, and nobody mid-download may leave.
+        self.skip_hint.setVisible(not running and not self.state.model_downloaded)
         if outcome is not None:
             self.download_status.setText(outcome)
         elif self.state.cancelling:

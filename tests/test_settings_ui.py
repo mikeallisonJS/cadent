@@ -11,9 +11,10 @@ import pytest
 from conftest import LONG_DEVICE_NAMES
 from PySide6.QtCore import Qt
 
-from cadent import a11y, jsonstore, models, settings, snippets, vocabulary
+from cadent import a11y, hardware, jsonstore, models, settings, snippets, vocabulary
 from cadent.config import AppOverride, Config
 from cadent.config_store import ConfigStore
+from cadent.downloads import Progress
 from cadent.settings_ui import SettingsWindow, speech
 from cadent.settings_ui.model_picker import CHIP_ROLE, SUBTITLE_ROLE
 from cadent.settings_ui.window import STRUCTURE
@@ -26,6 +27,18 @@ def _win32_facts(pinned_win32_facts):
     keycode table, labels). These tests describe the pane *logic* over the
     win32 column, so pin it — the darwin column (#144-#148) is exercised by
     building darwin-shaped capabilities explicitly, not by the host OS."""
+
+
+@pytest.fixture(autouse=True)
+def _a_model_is_on_disk(monkeypatch):
+    """Pin what the Speech pane's download button reads.
+
+    It asks the same global question the wizard does — "is *a* speech model on
+    disk?" — against the app's real models directory, so left alone these tests
+    would show or hide a button depending on whether the developer has ever run
+    Cadent. The common state is the pinned one; the tests about the button say
+    so themselves."""
+    monkeypatch.setattr(hardware, "any_speech_model_downloaded", lambda _d: True)
 
 
 @pytest.fixture
@@ -526,6 +539,146 @@ def test_the_cleanup_runtime_row_writes_the_value_not_its_label(speech_pane, gpu
     win.speech.advanced.setChecked(True)
     pick(win.speech.llm_runtime, "cpu")
     assert win.store.config.llm_runtime == "cpu"
+
+
+# ---- the speech download, watched and stoppable here too (#114, #115) ------
+
+@pytest.fixture
+def nothing_on_disk(monkeypatch):
+    """The state a skipped wizard leaves: no speech model anywhere."""
+    monkeypatch.setattr(hardware, "any_speech_model_downloaded", lambda _d: False)
+
+
+def test_a_download_started_elsewhere_shows_up_here(speech_pane, gpu_box):
+    """Picking a model sets a fetch off several layers down, and until #115 the
+    pane that made the change said nothing about it for up to 3.1 GB."""
+    win = speech_pane()
+    pane = win.speech
+    pane.mark_download_started()
+    pane.report_progress(Progress(130_000_000, 792_723_456))
+
+    assert pane.download_status.text() == "Downloading… 130 MB of 793 MB"
+    assert pane.download_bar.value() == 16
+    assert shown(pane.download_bar)
+
+
+def test_there_is_no_bar_before_there_is_anything_to_report(speech_pane, gpu_box):
+    win = speech_pane()
+    assert shown(win.speech.download_bar) is False
+    assert shown(win.speech.download_status) is False
+
+
+def test_the_button_becomes_the_cancel_for_the_download_it_started(speech_pane,
+                                                                  gpu_box):
+    cancelled = []
+    win = speech_pane()
+    win.model_download_cancel_requested.connect(lambda: cancelled.append(1))
+    win.speech.mark_download_started()
+
+    assert win.speech.download_button.text() == speech.CANCEL_DOWNLOAD
+    win.speech.download_button.click()
+    assert cancelled == [1]
+
+
+def test_cancel_says_it_is_cancelling_rather_than_that_it_cancelled(speech_pane,
+                                                                   gpu_box):
+    """The same claim-waits-for-the-app rule the wizard's button follows: only
+    the app knows when a fetch has actually unwound (#114)."""
+    win = speech_pane()
+    win.speech.mark_download_started()
+    win.speech.download_button.click()
+
+    assert win.speech.download_status.text() == speech.CANCELLING
+    assert win.speech.download_status.text() != speech.CANCELLED
+    assert win.speech.download_button.isEnabled() is False
+
+
+def test_asking_twice_only_cancels_once(speech_pane, gpu_box):
+    cancelled = []
+    win = speech_pane()
+    win.model_download_cancel_requested.connect(lambda: cancelled.append(1))
+    win.speech.mark_download_started()
+    win.speech._on_download_clicked()
+    win.speech._on_download_clicked()
+
+    assert cancelled == [1]
+
+
+def test_a_reading_that_arrives_after_the_download_is_ignored(speech_pane, gpu_box):
+    """hub's last chunk can land after the cancel was confirmed; a bar that
+    reappears reads as a cancel that didn't take."""
+    win = speech_pane()
+    win.speech.mark_download_started()
+    win.speech.mark_download_cancelled()
+    win.speech.report_progress(Progress(3, 4))
+
+    assert shown(win.speech.download_bar) is False
+    assert win.speech.download_status.text() == speech.CANCELLED
+
+
+def test_a_model_on_disk_needs_no_download_button(speech_pane, gpu_box):
+    """Choosing from the list is what downloads one. A second control for the
+    same act is a second thing to explain."""
+    win = speech_pane()
+    assert shown(win.speech.download_button) is False
+
+
+def test_a_skipped_setup_leaves_a_way_to_get_a_model(speech_pane, gpu_box,
+                                                     nothing_on_disk):
+    """The wizard's model page can now be skipped, and this is where its
+    docstring sends you. Without the button there is nothing to click: the
+    combo already sits on the configured model, so re-picking it commits
+    nothing and starts nothing."""
+    asked = []
+    win = speech_pane()
+    win.model_download_requested.connect(lambda: asked.append(1))
+
+    assert shown(win.speech.download_button) is True
+    assert win.speech.download_button.text() == speech.DOWNLOAD
+    win.speech.download_button.click()
+    assert asked == [1]
+
+
+def test_a_failed_download_leaves_a_way_to_try_again(speech_pane, gpu_box):
+    win = speech_pane()
+    win.speech.mark_download_started()
+    win.speech.mark_download_finished(False, "the hub went away")
+
+    assert "the hub went away" in win.speech.download_status.text()
+    assert shown(win.speech.download_button) is True
+    assert win.speech.download_button.text() == speech.DOWNLOAD
+
+
+def test_a_cancelled_download_leaves_a_way_to_try_again(speech_pane, gpu_box):
+    """Stopping a download is not the same as not wanting the model."""
+    win = speech_pane()
+    win.speech.mark_download_started()
+    win.speech.mark_download_cancelled()
+
+    assert shown(win.speech.download_button) is True
+
+
+def test_a_finished_download_puts_the_pane_back_where_it_started(speech_pane,
+                                                                 gpu_box):
+    win = speech_pane()
+    win.speech.mark_download_started()
+    win.speech.mark_download_finished(True)
+
+    assert win.speech.download_status.text() == speech.READY
+    assert shown(win.speech.download_bar) is False
+    assert shown(win.speech.download_button) is False
+
+
+def test_a_new_pick_clears_the_last_attempts_verdict(speech_pane, gpu_box):
+    """Otherwise choosing a model that turns out to be cached already leaves
+    "Download failed: …" sitting under a model that loaded fine."""
+    win = speech_pane()
+    win.speech.mark_download_started()
+    win.speech.mark_download_finished(False, "the hub went away")
+    pick(win.speech.stt, "distil-medium.en")
+
+    assert win.speech.download_status.text() == ""
+    assert shown(win.speech.download_status) is False
 
 
 # ---- the cleanup rungs (#112) ----------------------------------------------

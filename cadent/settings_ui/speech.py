@@ -10,23 +10,32 @@ What is left is a list of models that read as choices rather than filenames,
 and a runtime that goes behind an Advanced disclosure — it is the setting that
 matters least and the one whose wrong answer is self-correcting, because every
 engine's `auto` ladder walks itself down to the CPU.
+
+Picking a speech model here *downloads* one, which until now was a tray balloon
+at the start and silence afterwards — for up to 3.1 GB, on the pane where the
+choice was made. The same bar, caption and Cancel the wizard grew in #114/#115
+live here too, driven by the same app-side signals, because a download you can
+watch and stop in setup and cannot in Settings is one feature with two answers.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QProgressBar,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
-from .. import hardware, models, platform, settings
+from .. import a11y, hardware, models, platform, settings
 from ..config import MODELS_DIR
+from ..downloads import Progress
 from .context import PaneContext
 from .model_picker import add_model_row, fill_speech_models, model_combo
 from .widgets import Notice, caps, card, label, page_title, row
@@ -44,12 +53,35 @@ OWN_FILE_BLURB = "Your own file"
 ADVANCED_SHOW = "Show advanced"
 ADVANCED_HIDE = "Hide advanced"
 
+# The download controls, worded exactly as the wizard words them (§6.5): one
+# button that is the verb it will perform, and a claim that waits for the app
+# rather than announcing a cancellation it has only asked for.
+DOWNLOAD = "Download model"
+CANCEL_DOWNLOAD = "Cancel download"
+CANCELLING = "Cancelling the download…"
+CANCELLED = "Download cancelled."
+READY = "Speech model ready."
+
 
 class SpeechPane(QWidget):
+    # The app owns the download; the pane only asks. Both signals travel out
+    # through SettingsWindow, which is the only thing app.py holds.
+    download_requested = Signal()
+    cancel_requested = Signal()
+
     def __init__(self, ctx: PaneContext) -> None:
         super().__init__()
         self.ctx = ctx
         self.setObjectName("Pane")
+        # The download, as this pane knows it. A fetch can start before this
+        # window exists and outlive it, so none of this is authoritative — it
+        # is the last thing the app said, which is what the pane can honestly
+        # paint.
+        self._downloading = False
+        self._cancelling = False
+        self._failed = False
+        self._progress = Progress(0, 0)
+        self._outcome = ""
         # Set while a model change repopulates the runtime combo, so its own
         # change signal doesn't write the value we are mid-way through setting.
         self._repopulating = False
@@ -84,6 +116,24 @@ class SpeechPane(QWidget):
                 desc="Everything runs on this PC. Nothing is uploaded.",
                 hint=settings.restart_hint("stt_model")),
         ]))
+
+        # Directly under the row that starts it, so the answer to "what is it
+        # doing?" is where the question was asked.
+        self.download_button = QPushButton(DOWNLOAD)
+        self.download_button.setObjectName("Accent")
+        self.download_button.clicked.connect(self._on_download_clicked)
+        layout.addWidget(self.download_button)
+        # Determinate, for the reason the wizard's is: the numbers exist, and
+        # the question during 3.1 GB is "how much longer".
+        self.download_bar = QProgressBar()
+        self.download_bar.setRange(0, 100)
+        self.download_bar.setTextVisible(False)
+        self.download_bar.setAccessibleName("Download progress")
+        layout.addWidget(self.download_bar)
+        self.download_status = label("", "RowHint")
+        layout.addWidget(self.download_status)
+        self._show_download_state()
+
         layout.addWidget(self.biasing)
         self._show_biasing_note(engine)
 
@@ -194,6 +244,13 @@ class SpeechPane(QWidget):
             self._fill_runtimes(engine, runtime)
             self._show_biasing_note(engine)
         self.ctx.set("stt_model", model)
+        # A new pick is a new attempt, so the last one's verdict goes. Without
+        # this, choosing a model that turns out to be cached already leaves
+        # "Download failed: …" sitting under a model that loaded fine.
+        if not self._downloading:
+            self._failed = False
+            self._outcome = ""
+            self._show_download_state()
 
     def _commit_runtime(self) -> None:
         runtime = self.runtime.currentData()
@@ -215,6 +272,91 @@ class SpeechPane(QWidget):
         note = settings.biasing_note(engine)
         self.biasing.setText(note)
         self.biasing.setVisible(bool(note))
+
+    # ---- the download: watched, stoppable, and never a dead end ------------
+
+    def _on_download_clicked(self) -> None:
+        """One button, two verbs — the wizard's shape (§6.5).
+
+        The cancel half **asks; it does not announce.** Only the app knows when
+        a fetch has actually unwound, so the line says what has been asked for
+        and waits for `mark_download_cancelled` (#114).
+        """
+        if self._downloading:
+            if self._cancelling:
+                return
+            self._cancelling = True
+            self.cancel_requested.emit()
+            self._show_download_state()
+            a11y.announce(self.download_status, CANCELLING)
+            return
+        self.mark_download_started()
+        self.download_requested.emit()
+
+    def mark_download_started(self) -> None:
+        """A fetch is under way — clicked here, or begun before this window
+        opened and adopted by it."""
+        self._downloading = True
+        self._cancelling = False
+        self._progress = Progress(0, 0)
+        self._outcome = ""
+        self._show_download_state()
+
+    def report_progress(self, reading: Progress) -> None:
+        """One reading, on the UI thread. Not announced: a screen reader
+        reciting a byte count every ten megabytes is noise. The bar carries it,
+        and both ends of the download are announced."""
+        if not self._downloading:
+            return      # a last chunk landing after the cancel was confirmed
+        self._progress = reading
+        self._show_download_state()
+
+    def mark_download_finished(self, ok: bool, detail: str = "") -> None:
+        self._settle(ok, READY if ok else f"Download failed: {detail}")
+
+    def mark_download_cancelled(self) -> None:
+        self._settle(False, CANCELLED)
+
+    def _settle(self, ok: bool, outcome: str) -> None:
+        self._downloading = False
+        self._cancelling = False
+        self._failed = not ok
+        self._outcome = outcome
+        self._show_download_state()
+        a11y.announce(self.download_status, outcome)
+
+    def _needs_a_download(self) -> bool:
+        """Is there a dead end here for the button to be the way out of?
+
+        Two of them, and neither is reachable any other way from this pane.
+        A wizard whose model step was skipped leaves the app with no weights at
+        all; a fetch that failed or was cancelled leaves the user looking at
+        the model they were denied — and the combo is already sitting on it, so
+        re-picking it writes nothing and starts nothing.
+
+        The rest of the time the button stays away: choosing a model from the
+        list is what downloads one, and a second control for the same act is a
+        second thing to explain.
+        """
+        return self._failed or not hardware.any_speech_model_downloaded(MODELS_DIR)
+
+    def _show_download_state(self) -> None:
+        """Paint the download from the state. The one place that decides what
+        the button says, whether it is there at all, and what the line reads."""
+        running = self._downloading
+        self.download_bar.setVisible(running)
+        self.download_bar.setValue(self._progress.percent)
+        self.download_button.setText(CANCEL_DOWNLOAD if running else DOWNLOAD)
+        self.download_button.setEnabled(not self._cancelling)
+        self.download_button.setVisible(running or self._needs_a_download())
+        if self._cancelling:
+            text = CANCELLING
+        elif running:
+            text = f"Downloading… {self._progress.caption}"
+        else:
+            text = self._outcome
+        self.download_status.setText(text)
+        self.download_status.setVisible(bool(text))
 
     # ---- the cleanup list --------------------------------------------------
 
