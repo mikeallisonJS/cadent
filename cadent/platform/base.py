@@ -92,10 +92,13 @@ class Capabilities:
     # win32 and the Cmd key on darwin, "<alt>" is Option there. Copy that
     # names a chord renders through this (chord.describe_combo, #166).
     modifier_captions: Mapping[str, str]
-    # Colour carries the tray state except where the OS adapts template
-    # images to the menu bar (darwin): there the mark is a mask and the
-    # states are shapes — flow lines, pause bars, the exclamation (#164).
-    tray_icon_is_template: bool
+    # Shape carries the tray state everywhere — flow lines, pause bars, the
+    # exclamation — and colour says nothing about it on either OS. What
+    # differs is who paints the silhouette: darwin adapts a mask to the menu
+    # bar itself, so it wants one shipped as a mask and picks the ink. Where
+    # this is false nobody paints it for us and `DesktopEnv.tray_ink` says
+    # what to use (supersedes #164, which made this a darwin-only story).
+    tray_icon_painted_by_os: bool
     # What "Follow system" actually follows, named the way the host OS names
     # it: Windows has two colour-mode settings and Qt reports the *app* one,
     # while macOS has one Appearance control. Copy that names an OS setting
@@ -227,6 +230,27 @@ class DesktopEnv(Protocol):
     def high_contrast(self) -> bool: ...
 
     def animations_enabled(self) -> bool: ...
+
+    def tray_ink(self) -> str:
+        """The colour the tray mark must be painted to read against this OS's
+        tray surface, as "#rrggbb".
+
+        Deliberately *not* the app's colour mode. The tray sits on the
+        taskbar, which Windows themes with its own setting, and Cadent's own
+        Light/Dark preference must never reach it — a user could otherwise
+        make their own tray icon invisible by picking a theme. Never called
+        where `Capabilities.tray_icon_painted_by_os` is true."""
+        ...
+
+    def watch_tray_ink(self, on_change: Callable[[], None]) -> None:
+        """Begin watching for changes to what `tray_ink()` would return.
+
+        Like `HotkeyTap.start`, `on_change` arrives on the watcher's own
+        thread and must stay fast — the tray lives on the GUI thread, so
+        callers marshal. A no-op where the OS paints the mark."""
+        ...
+
+    def stop_watching_tray_ink(self) -> None: ...
 
 
 @dataclass(frozen=True)

@@ -174,15 +174,17 @@ def test_darwin_capabilities_carry_the_ui_facts():
     # The icon click is a spare gesture only where the menu lives on
     # right-click; on darwin the same click opens the menu (#160).
     assert fallback.CAPABILITIES.tray_click_toggles_pause is True
-    # Colour carries the tray state except where the OS adapts template
-    # images to the menu bar (#164).
-    assert fallback.CAPABILITIES.tray_icon_is_template is False
+    # Shape carries the tray state on both platforms; what differs is who
+    # paints the silhouette (supersedes #164). Where nobody paints it for us
+    # the desktop has to be able to say what ink to use.
+    assert fallback.CAPABILITIES.tray_icon_painted_by_os is False
+    assert fallback.NullDesktop().tray_ink().startswith("#")
     if sys.platform == "darwin":
         caps = platform.current().capabilities
         assert caps.app_picker is True
         assert "Microphone" in caps.mic_permission_hint
         assert caps.tray_click_toggles_pause is False
-        assert caps.tray_icon_is_template is True
+        assert caps.tray_icon_painted_by_os is True
 
 
 def test_the_permission_probes_answer_on_every_platform():
@@ -267,3 +269,48 @@ def test_config_defaults_come_from_capabilities(monkeypatch):
     cfg = config.Config()
     assert cfg.injection_method == "clipboard"
     assert cfg.app_overrides == []
+
+
+# ---- the tray ink comes from the taskbar, not the app -----------------------
+
+@pytest.mark.skipif(sys.platform != "win32", reason="reads the Windows registry")
+def test_win32_tray_ink_reads_the_taskbars_setting_not_the_apps(monkeypatch):
+    """Windows themes the taskbar and apps separately, and Qt's colorScheme()
+    reports the *app* one. Reading that would put a black icon on a black
+    taskbar for every user running dark taskbar with light apps."""
+    import re
+
+    from cadent.platform import win32
+
+    desktop = win32.Win32Desktop()
+    monkeypatch.setattr(desktop, "high_contrast", lambda: False)
+
+    asked: list[str] = []
+
+    def fake_query(handle, name):
+        asked.append(name)
+        return (1, 4)
+
+    monkeypatch.setattr(win32.winreg, "QueryValueEx", fake_query)
+    assert desktop.tray_ink() == "#000000"        # light taskbar, dark ink
+    assert asked == ["SystemUsesLightTheme"]
+
+    monkeypatch.setattr(win32.winreg, "QueryValueEx", lambda h, n: (0, 4))
+    assert desktop.tray_ink() == "#ffffff"        # dark taskbar, light ink
+
+    # A missing value means a fresh Windows 11, whose taskbar is dark.
+    def missing(handle, name):
+        raise FileNotFoundError(name)
+
+    monkeypatch.setattr(win32.winreg, "QueryValueEx", missing)
+    assert desktop.tray_ink() == "#ffffff"
+
+    # Under a contrast theme neither black nor white is safe, so the theme's
+    # own text colour wins and the registry is not consulted at all.
+    consulted: list[str] = []
+    monkeypatch.setattr(desktop, "high_contrast", lambda: True)
+    monkeypatch.setattr(win32.winreg, "QueryValueEx",
+                        lambda h, n: (consulted.append(n), (1, 4))[1])
+    ink = desktop.tray_ink()
+    assert re.fullmatch(r"#[0-9a-f]{6}", ink), ink
+    assert consulted == []

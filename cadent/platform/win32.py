@@ -13,7 +13,9 @@ from __future__ import annotations
 import ctypes
 import logging
 import sys
+import threading
 import winreg
+from collections.abc import Callable
 from ctypes import wintypes
 from pathlib import Path
 
@@ -409,7 +411,50 @@ class Win32SingleInstance:
 
 # ---- desktop environment ------------------------------------------------------
 
+# The tray-ink watcher's Win32 surface, declared once at import.
+#
+# ctypes defaults every foreign return to `c_int`, and a `HANDLE` is
+# pointer-sized: taking `CreateEventW`'s result unprototyped truncates it on
+# 64-bit Windows. That is the same LP64-vs-LLP64 trap as #129, one layer down,
+# and it fails silently — handle values are usually small enough to survive the
+# cut, right up until one isn't.
+#
+# Loaded privately rather than through the cached `ctypes.windll`, so setting
+# these prototypes cannot reach any other user of kernel32 in the process
+# (`ctypes.WinDLL("d3d12.dll")` above does the same for the same reason).
+_kernel32 = ctypes.WinDLL("kernel32")
+_advapi32 = ctypes.WinDLL("advapi32")
+
+_kernel32.CreateEventW.argtypes = (wintypes.LPVOID, wintypes.BOOL,
+                                   wintypes.BOOL, wintypes.LPCWSTR)
+_kernel32.CreateEventW.restype = wintypes.HANDLE
+_kernel32.ResetEvent.argtypes = (wintypes.HANDLE,)
+_kernel32.ResetEvent.restype = wintypes.BOOL
+_kernel32.SetEvent.argtypes = (wintypes.HANDLE,)
+_kernel32.SetEvent.restype = wintypes.BOOL
+_kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+_kernel32.CloseHandle.restype = wintypes.BOOL
+_kernel32.WaitForMultipleObjects.argtypes = (wintypes.DWORD,
+                                             ctypes.POINTER(wintypes.HANDLE),
+                                             wintypes.BOOL, wintypes.DWORD)
+_kernel32.WaitForMultipleObjects.restype = wintypes.DWORD
+_advapi32.RegNotifyChangeKeyValue.argtypes = (wintypes.HKEY, wintypes.BOOL,
+                                              wintypes.DWORD, wintypes.HANDLE,
+                                              wintypes.BOOL)
+_advapi32.RegNotifyChangeKeyValue.restype = wintypes.LONG
+
+
 class Win32Desktop:
+    # The taskbar's colour mode. `AppsUseLightTheme` sits beside it and is the
+    # one Qt reports through colorScheme(); the two disagree often enough that
+    # reading the wrong one puts a black icon on a black taskbar.
+    _PERSONALIZE = (r"SOFTWARE\Microsoft\Windows\CurrentVersion\Themes"
+                    r"\Personalize")
+
+    def __init__(self) -> None:
+        self._ink_thread: threading.Thread | None = None
+        self._ink_stop: int | None = None
+
     def open_path(self, path: Path) -> None:
         try:
             import os
@@ -466,6 +511,119 @@ class Win32Desktop:
         except Exception:
             return True
 
+    def tray_ink(self) -> str:
+        """Black on a light taskbar, white on a dark one — and whatever the
+        contrast theme draws text with when one is on."""
+        if self.high_contrast():
+            # A contrast theme paints the taskbar from its own palette, so
+            # neither black nor white is safe. COLOR_WINDOWTEXT is what that
+            # theme writes text in, and the tray sits among text.
+            try:
+                COLOR_WINDOWTEXT = 8
+                # COLORREF is 0x00BBGGRR — the red channel is the low byte.
+                bgr = int(ctypes.windll.user32.GetSysColor(COLOR_WINDOWTEXT))
+                r, g, b = bgr & 0xFF, (bgr >> 8) & 0xFF, (bgr >> 16) & 0xFF
+                return f"#{r:02x}{g:02x}{b:02x}"
+            except Exception:
+                log.debug("GetSysColor(COLOR_WINDOWTEXT) failed", exc_info=True)
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                self._PERSONALIZE) as handle:
+                light = int(winreg.QueryValueEx(
+                    handle, "SystemUsesLightTheme")[0])
+        except Exception:
+            # Absent on a fresh Windows 11, whose taskbar is dark. Guessing
+            # light here would paint black on black.
+            light = 0
+        return "#000000" if light else "#ffffff"
+
+    def watch_tray_ink(self, on_change: Callable[[], None]) -> None:
+        """Watch the Personalize key on a thread of our own.
+
+        `RegNotifyChangeKeyValue` rather than a `WM_SETTINGCHANGE` filter: the
+        message route needs a window and a Qt event loop, and this package
+        stays Qt-free (ADR 0005). The callback lands on this thread, exactly
+        as `HotkeyTap.start`'s does."""
+        # `is_alive`, not `is not None`: a worker that exited early — no
+        # Personalize key, a refused registration — must not wedge the door
+        # shut against every later attempt to start one.
+        if self._ink_thread is not None and self._ink_thread.is_alive():
+            return
+        stop = _kernel32.CreateEventW(None, True, False, None)
+        if not stop:
+            log.debug("CreateEventW failed (%s); the tray ink will not follow "
+                      "the taskbar", ctypes.windll.kernel32.GetLastError())
+            return
+        self._ink_stop = stop
+        # The handle is passed in as well as stored: `stop_watching_tray_ink`
+        # clears the attribute while the worker is still running, and the
+        # worker must not be reading it at that moment.
+        self._ink_thread = threading.Thread(
+            target=self._watch_ink, args=(on_change, stop), daemon=True,
+            name="cadent-tray-ink")
+        self._ink_thread.start()
+
+    def _watch_ink(self, on_change: Callable[[], None], stop: int) -> None:
+        REG_NOTIFY_CHANGE_LAST_SET = 0x00000004
+        WAIT_OBJECT_0 = 0
+        INFINITE = 0xFFFFFFFF
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, self._PERSONALIZE)
+        except OSError:
+            log.debug("no Personalize key to watch; the tray ink will not "
+                      "follow the taskbar", exc_info=True)
+            return
+        with key:
+            event = _kernel32.CreateEventW(None, True, False, None)
+            if not event:
+                log.debug("CreateEventW failed (%s)",
+                          ctypes.windll.kernel32.GetLastError())
+                return
+            # Both handles are locals for the life of the wait. The stop event
+            # shares it so a quit never blocks on a theme change that may not
+            # come for hours.
+            handles = (wintypes.HANDLE * 2)(wintypes.HANDLE(event),
+                                            wintypes.HANDLE(stop))
+            try:
+                while True:
+                    _kernel32.ResetEvent(event)
+                    # Re-armed every pass: one registration yields one
+                    # notification and then forgets us.
+                    status = _advapi32.RegNotifyChangeKeyValue(
+                        wintypes.HKEY(int(key)), False,
+                        REG_NOTIFY_CHANGE_LAST_SET, wintypes.HANDLE(event),
+                        True)
+                    if status != 0:
+                        log.debug("RegNotifyChangeKeyValue failed (%s)", status)
+                        return
+                    if _kernel32.WaitForMultipleObjects(
+                            2, handles, False, INFINITE) != WAIT_OBJECT_0:
+                        return          # stop signalled, or the wait failed
+                    on_change()
+            except Exception:
+                log.debug("tray ink watch ended", exc_info=True)
+            finally:
+                _kernel32.CloseHandle(event)
+
+    def stop_watching_tray_ink(self) -> None:
+        thread, self._ink_thread = self._ink_thread, None
+        stop, self._ink_stop = self._ink_stop, None
+        if not stop:
+            return
+        _kernel32.SetEvent(stop)
+        if thread is not None:
+            thread.join(timeout=1.0)
+            if thread.is_alive():
+                # The worker still holds this handle in its wait array, and
+                # Windows recycles handle values — closing it now could leave
+                # that wait pointing at somebody else's object. One leaked
+                # event on a shutdown that already went wrong is the cheaper
+                # mistake.
+                log.debug("tray ink watcher did not stop; leaving its stop "
+                          "event open")
+                return
+        _kernel32.CloseHandle(stop)
+
 
 # ---- the assembled platform ---------------------------------------------------
 
@@ -491,7 +649,7 @@ CAPABILITIES = Capabilities(
     # Mac-authored "<option>" must read as the key it lands on here.
     modifier_captions={"ctrl": "Ctrl", "shift": "Shift", "alt": "Alt",
                        "option": "Alt", "win": "Win", "cmd": "Win"},
-    tray_icon_is_template=False,
+    tray_icon_painted_by_os=False,
     # Windows has two theme settings and Qt's colorScheme reports the *app*
     # one, so a user running a dark taskbar with light apps who picks System
     # correctly gets a light Cadent. Without this line that reads as a bug.

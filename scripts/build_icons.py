@@ -1,7 +1,7 @@
-"""Rasterise the Cadent mark from SVG to the PNG set and the .ico.
+"""Rasterise the Cadent mark from SVG to the PNG set, the .ico and the .icns.
 
 The mark is authored once per state as SVG (`packaging/icons/mark-*.svg`) and
-rasterised here at build time to the exact sizes Windows asks for, so
+rasterised here at build time to the exact sizes the tray asks for, so
 `QIcon.addFile()` never has to scale and Qt's SVG image-format plugin never
 has to survive PyInstaller (#69).
 
@@ -9,6 +9,18 @@ Two grids per state: the 24-unit master serves 24 and up, and a
 hand-corrected 16-unit source (`mark-*-16.svg`) serves 16 and 20, where the
 cradle has to land on whole pixel rows. Per-size correction is the whole
 reason this runs at build time rather than scaling one source (#73).
+
+One set, both platforms. The tray rasters are **alpha only**: the mark is
+painted at runtime in an ink the OS picks (darwin masks it to the menu bar)
+or one derived from the taskbar (win32), so what ships is a silhouette and
+the SVG's nominal black never reaches a screen. The states differ by shape,
+not colour, everywhere — superseding the darwin-only composition of #164.
+
+The `.ico` and `.icns` are the exception: the exe, the installer and the
+.app bundle want the brand mark in colour, so the Ready source is rendered a
+second time with `#000` substituted for the brand purple. That substitution
+is a stopgap — the app icon becomes its own treatment (a knockout on a
+purple tile) in its own change, and this block goes with it.
 
 Run:  uv run python scripts/build_icons.py
 Out:  packaging/icons/png/mark-<state>-<size>.png   (18 files)
@@ -35,6 +47,12 @@ SIZES = [16, 20, 24, 32, 48, 256]
 # 24-unit master does.
 HINT_CEILING = 20
 
+# The nominal fill every mark SVG is authored with; the app-icon containers
+# replace it with the brand ink `cadent.icons` paints the window icon in.
+# Keeping the sources black means an untinted render is a legible silhouette
+# rather than a stray brand colour.
+NOMINAL_INK = b"#000"
+
 # The .icns entries, as (OSType, pixel size) — the PNG-capable types `iconutil`
 # emits for a full .iconset (#171). macOS addresses an icon by point size *and*
 # retina scale, so 32, 256 and 512 each appear twice under different types: a
@@ -49,18 +67,23 @@ ICNS_TYPES = [
 ICNS_SIZES = sorted({size for _, size in ICNS_TYPES})
 
 
-def render(state: str, size: int, template: bool = False) -> QImage:
-    """One raster. `template` picks the darwin menu-bar set (#164): the same
-    per-size correction discipline, but silhouette-only sources — macOS
-    recolours a template image, so the states differ by shape."""
-    suffix = "-template" if template else ""
-    src = ICONS / (f"mark-{state}{suffix}-16.svg" if size <= HINT_CEILING
-                   else f"mark-{state}{suffix}.svg")
+def source(state: str, size: int) -> Path:
+    """Which grid serves this size."""
+    suffix = "-16" if size <= HINT_CEILING else ""
+    return ICONS / f"mark-{state}{suffix}.svg"
+
+
+def render(state: str, size: int, ink: bytes | None = None) -> QImage:
+    """One raster. `ink` substitutes the SVG's nominal black — used only for
+    the app-icon containers; the tray set keeps the alpha and no colour."""
+    data = source(state, size).read_bytes()
+    if ink is not None:
+        data = data.replace(NOMINAL_INK, ink)
     img = QImage(size, size, QImage.Format.Format_ARGB32)
     img.fill(Qt.GlobalColor.transparent)
     p = QPainter(img)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    QSvgRenderer(str(src)).render(p)
+    QSvgRenderer(QByteArray(data)).render(p)
     p.end()
     return img
 
@@ -127,26 +150,24 @@ def main() -> None:
     # follows it, so the two can never drift apart.
     from cadent import icons
 
-    ready: list[QImage] = []
     for state in STATES:
         for size in SIZES:
-            img = render(state, size)
-            img.save(str(icons.png_path(state, size)), "PNG")
-            if state == "ready":
-                ready.append(img)
-            render(state, size, template=True).save(
-                str(icons.png_path(state, size, template=True)), "PNG")
+            render(state, size).save(str(icons.png_path(state, size)), "PNG")
 
+    # The containers, rendered fresh in the brand colour: the tray set above
+    # carries no colour to reuse.
+    brand = icons.BRAND_INK.encode()
     ico = ICONS / "cadent.ico"
-    write_ico(ready, ico)
+    write_ico([render("ready", size, brand) for size in SIZES], ico)
 
-    # The .app icon (#171). Its own size ladder, rendered fresh: the Dock and
-    # Finder ask up to 1024, four sizes past anything the tray or the .ico
-    # needs, and none of them belong in the runtime PNG set.
+    # The .app icon (#171). Its own size ladder: the Dock and Finder ask up to
+    # 1024, four sizes past anything the tray or the .ico needs, and none of
+    # them belong in the runtime PNG set.
     icns = icons.icns_path()
-    write_icns({size: render("ready", size) for size in ICNS_SIZES}, icns)
+    write_icns({size: render("ready", size, brand)
+                for size in ICNS_SIZES}, icns)
 
-    print(f"  {2 * len(STATES) * len(SIZES)} PNGs -> {out}")
+    print(f"  {len(STATES) * len(SIZES)} PNGs -> {out}")
     print(f"  {ico.name} ({ico.stat().st_size:,} bytes, "
           f"{len(SIZES)} sizes) -> {ico.parent}")
     print(f"  {icns.name} ({icns.stat().st_size:,} bytes, "

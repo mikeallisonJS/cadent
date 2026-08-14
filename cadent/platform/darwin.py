@@ -24,6 +24,7 @@ import plistlib
 import shlex
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from .. import config
@@ -170,6 +171,19 @@ class DarwinDesktop:
         except Exception:
             log.debug("reduce-motion probe failed", exc_info=True)
             return True
+
+    def tray_ink(self) -> str:
+        """Never consulted: `tray_icon_painted_by_os` is true here, so the
+        mark ships as a mask and the menu bar picks the ink — including for
+        vibrancy and Reduce Transparency, which no value we chose could
+        track. Present to satisfy the protocol, black by convention."""
+        return "#000000"
+
+    def watch_tray_ink(self, on_change: Callable[[], None]) -> None:
+        pass    # the menu bar repaints the mask itself; nothing to watch
+
+    def stop_watching_tray_ink(self) -> None:
+        pass
 
 
 # ---- keyboard output: CGEvent (spec §2) ---------------------------------------
@@ -588,7 +602,7 @@ def create() -> Platform:
                 "permission for your terminal or IDE in System Settings → "
                 "Privacy & Security → Microphone."),
             tray_click_toggles_pause=False,
-            tray_icon_is_template=True,
+            tray_icon_painted_by_os=True,
             modifier_captions={"ctrl": "Ctrl", "shift": "Shift",
                                "alt": "Option", "option": "Option",
                                "win": "Cmd", "cmd": "Cmd"},

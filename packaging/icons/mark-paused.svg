@@ -1,9 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-  <!-- Cadent mark - paused. Wayfinder #73, geometry A.
-       One silhouette across all three states (#69): only the fill changes. -->
-  <rect x="9" y="2.5" width="6" height="10.5" rx="3" fill="#8b849e"/>
-  <path d="M5.5 10.5 a6.5 6.5 0 0 0 13 0" fill="none" stroke="#8b849e"
-        stroke-width="2" stroke-linecap="round"/>
-  <rect x="11" y="16.5" width="2" height="3.5" fill="#8b849e"/>
-  <rect x="7.5" y="19.6" width="9" height="2.2" rx="1.1" fill="#8b849e"/>
+  <!-- Cadent mark - paused. Same cradle as ready; the flow lines give way to
+       two pause bars, centred in the 18.6-23.4 state zone.
+
+       States differ by silhouette on every platform now, not by colour: the
+       tray mark is painted in one ink per OS surface, so shape is the only
+       thing left to say ready from paused with. -->
+  <rect x="9.48" y="4.02" width="5.04" height="8.82" rx="2.52" fill="#000"/>
+  <path d="M6.54 10.74 a5.46 5.46 0 0 0 10.92 0" fill="none" stroke="#000"
+        stroke-width="1.68" stroke-linecap="round"/>
+  <rect x="11.16" y="15.78" width="1.68" height="2.94" fill="#000"/>
+  <rect x="8.22" y="18.38" width="7.56" height="1.85" rx="0.92" fill="#000"/>
+  <rect x="18.8" y="8.5" width="1.6" height="7" rx="0.8" fill="#000"/>
+  <rect x="21.6" y="8.5" width="1.6" height="7" rx="0.8" fill="#000"/>
 </svg>
