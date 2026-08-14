@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- The app icon's tile: the exe, the installer, Add/Remove Programs, the
+       .app bundle, the Dock and the taskbar button.
+
+       Deliberately the tile alone. The mark is *not* drawn here - it has one
+       source, mark-ready.svg, and build_icons.py composites it over this at
+       62.5% of the canvas as a white knockout. A second copy of the geometry
+       in this file is exactly the parallel-copy drift ADR 0006 exists to
+       undo, and it would be a copy nobody notices going stale, because this
+       file is only ever looked at while the app icon is being changed.
+
+       Why a tile at all, when the tray is a bare silhouette: a 2px-stroke
+       glyph on transparency reads as a placeholder at 512px in the Dock or
+       the Applications folder, beside neighbours that are all filled shapes.
+       The tray and the app icon have different jobs at different sizes.
+
+       rx 224 on 1024 is 21.9% - between Apple's continuous corner and
+       Windows 11's near-square, which is the point of having one tile rather
+       than one per platform.
+
+       The gradient is the one place Cadent uses one. #8f78ff is a lifted
+       brand purple and #3f22b5 the floor; the diagonal reads as a lit
+       surface, which is the convention for an icon and nowhere else. The
+       tray mark stays flat - it is painted in an ink the OS chooses. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8f78ff"/>
+      <stop offset="1" stop-color="#3f22b5"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="url(#tile)"/>
+</svg>

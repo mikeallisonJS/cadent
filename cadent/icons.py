@@ -1,7 +1,8 @@
 """The Cadent mark: one silhouette, three shapes, six sizes (spec §2).
 
 One mic-derived mark is the app's entire visual identity — the tray on both
-platforms, the exe, the installer, and every window's title-bar icon. The
+platforms, and, knocked out of a gradient tile, the exe, the installer, the
+.app bundle and every window's title-bar icon (`app_icon`). The
 three availability states differ by *shape*: flow lines, pause bars, the
 exclamation. Colour says nothing about state anywhere (this supersedes #164,
 where only darwin worked this way and Windows recoloured one silhouette).
@@ -27,8 +28,6 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 
-from .theme.tokens import BASE
-
 # Availability only (spec §3.1). Whether cleanup is on is deliberately absent: it
 # lives in the tooltip and the menu checkbox, because a 16px icon Windows
 # frequently collapses into the overflow flyout is the wrong surface for a
@@ -36,15 +35,11 @@ from .theme.tokens import BASE
 STATES = ("ready", "paused", "attention")
 SIZES = (16, 20, 24, 32, 48, 256)
 
-# The window / taskbar / Alt-Tab mark is the brand colour; only the tray takes
-# its ink from the surface underneath it. Read from the token so the value the
-# taskbar contrast audit checks is the value that gets painted.
-BRAND_INK = str(BASE["brand"])
-
 # Keyed by ink as well as state: a taskbar that flips from light to dark asks
 # for the same state in a new colour, and a key that ignored the ink would
 # serve the old one back for the life of the process.
 _cache: dict[tuple[str, str | None], QIcon] = {}
+_app_icon: QIcon | None = None
 
 
 def icons_dir() -> Path:
@@ -123,8 +118,18 @@ def state_icon(state: str) -> QIcon:
 
 
 def app_icon() -> QIcon:
-    """The window / taskbar / Alt-Tab icon: the Ready mark in brand colour.
+    """The window / taskbar / Alt-Tab icon: the tile, read from `cadent.ico`.
 
-    Never a mask — windows and installers want the brand mark, and a mask
-    outside the menu bar renders as a black blot."""
-    return _mark("ready", BRAND_INK)
+    The same artefact the exe and the installer carry, deliberately. On
+    Windows a *running* app's taskbar button takes its icon from here, not
+    from the exe — point this at anything else and the button disagrees with
+    the Start menu entry that launched it, which is the mismatch this whole
+    line of work started from.
+
+    Read from the container rather than a parallel PNG set for the same
+    reason: one file, nothing to keep in step. Qt's ICO support is read-only,
+    which is all this needs."""
+    global _app_icon
+    if _app_icon is None:
+        _app_icon = QIcon(str(ico_path()))
+    return _app_icon

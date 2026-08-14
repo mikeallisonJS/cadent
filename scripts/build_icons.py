@@ -16,11 +16,12 @@ or one derived from the taskbar (win32), so what ships is a silhouette and
 the SVG's nominal black never reaches a screen. The states differ by shape,
 not colour, everywhere — superseding the darwin-only composition of #164.
 
-The `.ico` and `.icns` are the exception: the exe, the installer and the
-.app bundle want the brand mark in colour, so the Ready source is rendered a
-second time with `#000` substituted for the brand purple. That substitution
-is a stopgap — the app icon becomes its own treatment (a knockout on a
-purple tile) in its own change, and this block goes with it.
+The `.ico` and `.icns` are a different picture entirely: the exe, the
+installer, the .app bundle and the Dock get the **tile** — `app-tile.svg`'s
+gradient rounded square with the Ready mark knocked out of it in white, at
+62.5% of the canvas. That is composited here rather than authored as one SVG
+so the mark keeps a single source; a copy of the geometry inside a tile file
+would be the parallel-copy drift ADR 0006 exists to undo.
 
 Run:  uv run python scripts/build_icons.py
 Out:  packaging/icons/png/mark-<state>-<size>.png   (18 files)
@@ -47,11 +48,25 @@ SIZES = [16, 20, 24, 32, 48, 256]
 # 24-unit master does.
 HINT_CEILING = 20
 
-# The nominal fill every mark SVG is authored with; the app-icon containers
-# replace it with the brand ink `cadent.icons` paints the window icon in.
-# Keeping the sources black means an untinted render is a legible silhouette
-# rather than a stray brand colour.
+# The nominal fill every mark SVG is authored with; the app icon knocks the
+# mark out of its tile by rendering it white. Keeping the sources black means
+# an untinted render is a legible silhouette rather than a stray brand colour.
 NOMINAL_INK = b"#000"
+KNOCKOUT_INK = b"#ffffff"
+
+# How much of the tile the mark fills. 640 on the 1024 master — enough to read
+# as the subject at 32px in a taskbar, short of crowding the corners at 512.
+# The mark is placed by its 24-unit grid box, not by its ink: the ink sits
+# right of centre (the flow lines run out of the mic), and centring *that*
+# pushes the mic off-centre, which is the thing the eye actually tracks.
+MARK_FILL = 0.625
+
+# Below 32px the proportional mark runs out of pixels — at a 16px tile it gets
+# ten, and the mic stops being a mic. The small entries trade tile margin for
+# glyph, which is what every platform's own icon set does at this size; the
+# discontinuity is invisible because nothing ever shows 24 and 32 together.
+SMALL_TILE = 24
+SMALL_MARK_FILL = 0.80
 
 # The .icns entries, as (OSType, pixel size) — the PNG-capable types `iconutil`
 # emits for a full .iconset (#171). macOS addresses an icon by point size *and*
@@ -84,6 +99,30 @@ def render(state: str, size: int, ink: bytes | None = None) -> QImage:
     p = QPainter(img)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     QSvgRenderer(QByteArray(data)).render(p)
+    p.end()
+    return img
+
+
+def app_icon(size: int) -> QImage:
+    """The tile with the Ready mark knocked out of it, at one size.
+
+    Composited rather than authored: `app-tile.svg` owns the tile and
+    `mark-ready.svg` owns the mark, so neither can drift from the other. The
+    mark is rendered at its own target size rather than scaled after the fact,
+    which keeps the `HINT_CEILING` routing intact — a 32px tile draws a 20px
+    mark, and 20 still comes off the hand-corrected 16-unit grid.
+    """
+    img = QImage(size, size, QImage.Format.Format_ARGB32)
+    img.fill(Qt.GlobalColor.transparent)
+    p = QPainter(img)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    QSvgRenderer(QByteArray((ICONS / "app-tile.svg").read_bytes())).render(p)
+    fill = SMALL_MARK_FILL if size <= SMALL_TILE else MARK_FILL
+    mark_px = round(size * fill)
+    if mark_px:
+        # Centred by the mark's grid box — see MARK_FILL.
+        offset = (size - mark_px) // 2
+        p.drawImage(offset, offset, render("ready", mark_px, KNOCKOUT_INK))
     p.end()
     return img
 
@@ -154,18 +193,17 @@ def main() -> None:
         for size in SIZES:
             render(state, size).save(str(icons.png_path(state, size)), "PNG")
 
-    # The containers, rendered fresh in the brand colour: the tray set above
-    # carries no colour to reuse.
-    brand = icons.BRAND_INK.encode()
+    # The containers carry the tile, not the tray silhouette: an icon sitting
+    # among filled shapes in a Dock or a Start menu has a different job from
+    # one sitting among monochrome glyphs in a tray.
     ico = ICONS / "cadent.ico"
-    write_ico([render("ready", size, brand) for size in SIZES], ico)
+    write_ico([app_icon(size) for size in SIZES], ico)
 
     # The .app icon (#171). Its own size ladder: the Dock and Finder ask up to
     # 1024, four sizes past anything the tray or the .ico needs, and none of
     # them belong in the runtime PNG set.
     icns = icons.icns_path()
-    write_icns({size: render("ready", size, brand)
-                for size in ICNS_SIZES}, icns)
+    write_icns({size: app_icon(size) for size in ICNS_SIZES}, icns)
 
     print(f"  {len(STATES) * len(SIZES)} PNGs -> {out}")
     print(f"  {ico.name} ({ico.stat().st_size:,} bytes, "
