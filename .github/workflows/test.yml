@@ -1,0 +1,46 @@
+# The seam's guarantee, enforced (#143, spec §1.4): the suite runs on both
+# OSes on every push and PR, so an OS import outside a platform adapter fails
+# in CI on the OS that lacks it — the import-walk test makes the rule real.
+# Adapter-internal tests platform-skip themselves.
+
+name: test
+
+# push is main-only: every branch lands by PR, and push+pull_request on the
+# same branch would run every suite twice.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-14 pinned by name — the Apple-silicon runner the spec names
+        # (§1.4), matching the M1 Max the port is benched on.
+        #
+        # Per-OS QPA: the Windows runner has a real desktop session and the
+        # real `windows` platform resolves real system fonts — under
+        # `offscreen` there, Segoe UI falls back to something ~1.4x wider
+        # and every geometry test measures a font no user has. The macOS
+        # runner leg runs `offscreen`, where fonts resolve correctly.
+        include:
+          - os: windows-latest
+            qpa: windows
+          - os: macos-14
+            qpa: offscreen
+    runs-on: ${{ matrix.os }}
+    env:
+      QT_QPA_PLATFORM: ${{ matrix.qpa }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run tests
+        run: uv run pytest

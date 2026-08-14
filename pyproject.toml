@@ -1,0 +1,130 @@
+[project]
+name = "cadent"
+version = "0.2.0"
+description = "Fully-local push-to-talk AI dictation for Windows: transcribe, clean up, insert at the cursor"
+requires-python = ">=3.11"
+dependencies = [
+    "faster-whisper>=1.1",
+    "onnx-asr>=0.12",
+    # The DirectML build of onnxruntime, not the CPU one faster-whisper asks
+    # for: same import package, plus the execution provider the Parakeet
+    # engine runs on (#72). See docs/research/parakeet-runtime.md — the CUDA
+    # provider would have cost a ~1.9 GB second GPU pack tier. The override
+    # below is what keeps the two distributions from clobbering each other.
+    # Windows-only: the distribution ships win_amd64 wheels exclusively;
+    # other platforms get plain `onnxruntime` via the override below.
+    "onnxruntime-directml>=1.24; sys_platform == 'win32'",
+    "sounddevice>=0.5",
+    "numpy>=1.26",
+    "PySide6>=6.8",
+    # ≥ 1.8.2 is load-bearing on darwin (#145, ADR 0002): that release's
+    # listener reports the injected-event flag (kCGEventSourceUnixProcessID
+    # != 0) to callbacks — the LLKHF_INJECTED parity that keeps our own
+    # posted Cmd-V out of the chord machine.
+    "pynput>=1.8.2",
+    # Already present transitively via pynput on macOS; declared explicitly
+    # because darwin.py imports AppKit, Quartz, and ApplicationServices itself
+    # (spec §2, §5.1, §6.3) — a dependency the app uses directly is not left
+    # to another package's dependency tree.
+    "pyobjc-framework-Cocoa>=10; sys_platform == 'darwin'",
+    "pyobjc-framework-Quartz>=10; sys_platform == 'darwin'",
+    "pyobjc-framework-ApplicationServices>=10; sys_platform == 'darwin'",
+    "pywin32>=306; sys_platform == 'win32'",
+    "psutil>=5.9",
+    "pyperclip>=1.9",
+    "platformdirs>=4.0",
+    "rapidfuzz>=3.14.5",
+    "jellyfish>=1.2.1",
+]
+
+[project.optional-dependencies]
+cleanup = [
+    "llama-cpp-python>=0.3",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+    "towncrier>=24.8",
+]
+build = [
+    "pyinstaller>=6.21",
+]
+
+[project.scripts]
+cadent = "cadent.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["cadent*"]
+
+[tool.uv]
+# faster-whisper requires the `onnxruntime` distribution (for Silero VAD);
+# `onnxruntime-directml` is a different distribution that installs the *same*
+# `onnxruntime` package. Both installed means whichever lands last wins, which
+# is not something to leave to resolution order. The marker keeps plain
+# `onnxruntime` off Windows only, so exactly one distribution provides the
+# module there; every other platform relies on plain `onnxruntime` (>=1.28
+# ships macOS arm64 wheels) and must keep it.
+override-dependencies = ["onnxruntime>=1.28; sys_platform != 'win32'"]
+
+# The Vulkan build, not the CPU one (#116). Same version, same wheel tag, one
+# extra backend DLL — ggml-vulkan.dll — and cleanup runs on whatever GPU the
+# machine has. Vulkan rather than CUDA because it is vendor-neutral (AMD, Intel
+# and NVIDIA on one wheel), 42 MB against cu124's 536 MB, and needs no support
+# pack: vulkan-1.dll ships with every Windows GPU driver, whereas the CUDA
+# build dynamically links cudart/cublas that we would have to stage ourselves.
+# CPU stays reachable at runtime through `llm_runtime` — the wheel serves both.
+# Narrower than the CPU index it replaces: win_amd64 and manylinux x86_64 only,
+# no macOS or aarch64. That covers every platform this Windows-only app is
+# developed on, and the extra is optional everywhere else.
+[[tool.uv.index]]
+name = "llama-cpp-python-vulkan"
+url = "https://abetlen.github.io/llama-cpp-python/whl/vulkan"
+explicit = true
+
+[tool.uv.sources]
+# Windows-only: the Vulkan index ships no macOS wheels, and PyPI has no macOS
+# wheel either (see docs/research/macos-dev-environment.md §2b), so macOS falls
+# through to the PyPI sdist and builds from source (~60 s, Metal enabled by
+# default).
+llama-cpp-python = { index = "llama-cpp-python-vulkan", marker = "sys_platform == 'win32'" }
+
+# Changelog fragments (#168): every PR that touches code ships one in
+# changelog.d/, named <issue>.<type>.md. Only the three types below render
+# into CHANGELOG.md; `chore` and `docs` are valid fragment types too (the
+# escape hatch) but scripts/release.py drops them before towncrier runs.
+# The type→bump mapping lives in scripts/release.py, not here.
+[tool.towncrier]
+directory = "changelog.d"
+filename = "CHANGELOG.md"
+title_format = "## v{version} — {project_date}"
+issue_format = "[#{issue}](https://github.com/mikeallisonJS/cadent/issues/{issue})"
+ignore = ["README.md"]
+underlines = ["", "", ""]
+
+[[tool.towncrier.type]]
+directory = "breaking"
+name = "Breaking changes"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "feature"
+name = "Features"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "bugfix"
+name = "Fixes"
+showcontent = true
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "SIM105",  # contextlib.suppress: broad excepts here are deliberate (never lose a transcript)
+]

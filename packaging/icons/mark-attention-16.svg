@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Cadent mark - attention, hand-corrected 16 grid. Wayfinder #73.
+       Every edge on a whole pixel; the cradle thickens 2.0 so it lands on
+       rows 10-12 instead of straddling three rows at half alpha; the base
+       drops to a single pixel row. Used for the 16 and 20 rasters only. -->
+  <rect x="6" y="2" width="4" height="6" rx="2" fill="#cc5f14"/>
+  <path d="M4 7 a4 4 0 0 0 8 0" fill="none" stroke="#cc5f14"
+        stroke-width="2" stroke-linecap="round"/>
+  <rect x="7" y="11" width="2" height="2" fill="#cc5f14"/>
+  <rect x="5" y="13" width="6" height="1" fill="#cc5f14"/>
+</svg>

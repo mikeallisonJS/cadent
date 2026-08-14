@@ -1,0 +1,35 @@
+Cadent — third-party model notices
+=====================================
+
+Cadent ships no model weights. It downloads the model you pick, once, from
+Hugging Face, and the licences below are the ones that then apply to what is on
+your disk. They are recorded here because two of them ask to be.
+
+Speech models
+-------------
+
+Whisper (`tiny.en`, `base.en`, `small.en`, `medium.en`, `large-v3` and the
+`distil-` distillations) — MIT. Original model by OpenAI; the CTranslate2
+conversions Cadent downloads are published by Systran, and the distilled
+variants by Distil-Whisper.
+
+NVIDIA Parakeet TDT 0.6B v2 / v3 — CC-BY-4.0. Attribution required:
+these models are by NVIDIA (https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2,
+https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3).
+
+Cleanup models
+--------------
+
+**Built with Llama.** The "Fastest" and "Balanced" cleanup rungs are
+Llama 3.2 1B Instruct and Llama 3.2 3B Instruct, built with Meta Llama 3.2 and
+used under the Llama 3.2 Community License Agreement
+(https://www.llama.com/llama3_2/license/). Llama 3.2 is licensed under the
+Llama 3.2 Community License, Copyright © Meta Platforms, Inc. All Rights
+Reserved. The GGUF quantisations Cadent downloads are published by
+bartowski.
+
+Qwen3 1.7B and Qwen3 4B Instruct 2507 — Apache-2.0. Copyright © Alibaba Cloud.
+The GGUF quantisations Cadent downloads are published by unsloth.
+
+Choosing your own GGUF file puts its licence entirely in your hands; Cadent
+neither fetches nor inspects it.

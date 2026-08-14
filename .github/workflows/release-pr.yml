@@ -1,0 +1,51 @@
+# The accumulating release PR (#168): every push to main with pending
+# fragments refreshes a `release/next` PR carrying the version bump, the
+# rendered CHANGELOG.md section, and the fragment deletions. Merging it is the
+# human release gate — tag-release.yml takes over from there. Merging the
+# release PR itself leaves no fragments, so the run it triggers no-ops.
+#
+# Known GITHUB_TOKEN limitation: CI doesn't run on the release PR itself.
+# The tag build after merge is the real gate for shippable artifacts.
+
+name: release-pr
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Compute next version from fragments
+        id: version
+        run: |
+          version=$(uv run --no-project --with towncrier python scripts/release.py next-version)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ -z "$version" ]; then echo "no pending fragments — nothing to release"; fi
+
+      - name: Render changelog and bump version
+        if: steps.version.outputs.version != ''
+        run: uv run --no-project --with towncrier python scripts/release.py prepare
+
+      - name: Create or update the release PR
+        if: steps.version.outputs.version != ''
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: release/next
+          title: "Release v${{ steps.version.outputs.version }}"
+          commit-message: "Release v${{ steps.version.outputs.version }}"
+          body: |
+            Auto-maintained by release-pr.yml (#168). Merging tags
+            `v${{ steps.version.outputs.version }}`, which builds the installer
+            and publishes the GitHub Release with the changelog section below
+            as its body. Review CHANGELOG.md in the diff — that's the release.
+          delete-branch: true

@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+*.pyc
+models/
+dist/
+build/
+*.spec
+!packaging/cadent.spec
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# The skills CLI mirrors every installed skill here for harness-agnostic
+# consumption. Claude Code reads .claude/skills, which is the copy we track.
+/.agents/
+
+# Claude Code's per-agent worktrees — each is its own git repo.
+.claude/worktrees/

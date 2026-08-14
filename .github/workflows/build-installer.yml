@@ -1,0 +1,63 @@
+# Build the Windows installer (#48): PyInstaller onedir via scripts/build.py,
+# wrapped by Inno Setup (preinstalled on windows-latest). Runs on version-tag
+# push (v*) and by hand. Unsigned per the M3 charter. scripts/smoke_frozen.py
+# stays a local step — the app's first run downloads models, which a CI runner
+# shouldn't do.
+
+name: build-installer
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # gh release upload on tag builds
+
+jobs:
+  installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Build frozen app (PyInstaller onedir)
+        run: uv run python scripts/build.py --skip-sync
+
+      - name: Determine version
+        id: version
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $env:GITHUB_REF_NAME.Substring(1)
+          } else {
+            "0.0.0-dev"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Compile installer (Inno Setup)
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            /DAppVersion=${{ steps.version.outputs.version }} `
+            packaging\cadent.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cadent-Setup-${{ steps.version.outputs.version }}
+          path: dist/installer/*.exe
+          if-no-files-found: error
+
+      - name: Attach installer to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME --generate-notes 2>$null
+          if ($LASTEXITCODE -ne 0) { Write-Host "release exists" }
+          gh release upload $env:GITHUB_REF_NAME (Get-Item dist/installer/*.exe).FullName --clobber

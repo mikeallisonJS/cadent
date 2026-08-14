@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!-- Cadent mark - ready. Wayfinder #73, geometry A.
+       One silhouette across all three states (#69): only the fill changes. -->
+  <rect x="9" y="2.5" width="6" height="10.5" rx="3" fill="#7a5cff"/>
+  <path d="M5.5 10.5 a6.5 6.5 0 0 0 13 0" fill="none" stroke="#7a5cff"
+        stroke-width="2" stroke-linecap="round"/>
+  <rect x="11" y="16.5" width="2" height="3.5" fill="#7a5cff"/>
+  <rect x="7.5" y="19.6" width="9" height="2.2" rx="1.1" fill="#7a5cff"/>
+</svg>

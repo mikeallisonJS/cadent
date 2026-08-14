@@ -1,0 +1,38 @@
+# The fragment gate (#168): a PR that touches code must carry a changelog
+# fragment. Hard fail, not a warning — PRs here are largely machine-written,
+# and a required check is a spec the sessions reliably satisfy. `chore`/`docs`
+# fragments are the escape hatch (they never render). Release PRs are exempt:
+# their whole job is consuming fragments.
+
+name: changelog-check
+
+on:
+  pull_request:
+
+permissions:
+  pull-requests: read
+
+jobs:
+  fragment:
+    if: "!startsWith(github.event.pull_request.head.ref, 'release/')"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require a fragment when code changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate -q '.[].filename')
+          echo "$files"
+          code=$(echo "$files" | grep -E '^(cadent/|packaging/|scripts/|pyproject\.toml)' || true)
+          fragment=$(echo "$files" | grep -E '^changelog\.d/[^/]+\.(breaking|feature|bugfix|chore|docs)\.md$' || true)
+          bad=$(echo "$files" | grep -E '^changelog\.d/' | grep -vE '^changelog\.d/(README\.md|[^/]+\.(breaking|feature|bugfix|chore|docs)\.md)$' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::changelog.d file doesn't match <issue>.<type>.md with a valid type: $bad"
+            exit 1
+          fi
+          if [ -n "$code" ] && [ -z "$fragment" ]; then
+            echo "::error::This PR touches code but adds no changelog fragment. Add changelog.d/<issue>.<type>.md (types: breaking, feature, bugfix, chore, docs — see docs/agents/releases.md)."
+            exit 1
+          fi
