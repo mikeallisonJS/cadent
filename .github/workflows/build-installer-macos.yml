@@ -71,11 +71,27 @@ jobs:
           IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
         run: |
           # Secrets aren't readable from `if:` expressions, so the decision is
-          # made here once and every later step keys off this output.
-          if [ -z "$CERTIFICATE" ] || [ -z "$IDENTITY" ]; then
+          # made here once and every later step keys off these outputs.
+          #
+          # Three states, not two. No secrets at all is the documented ad-hoc
+          # path. A half-configured set is a mistake, and falling back there
+          # would hand an uncertified image to somebody who asked for a signed
+          # one — so it fails the build instead, while the secrets are still
+          # the obvious thing to look at.
+          present=0
+          absent=0
+          for value in "$CERTIFICATE" "$CERTIFICATE_PASSWORD" "$IDENTITY"; do
+            if [ -n "$value" ]; then present=$((present + 1)); else absent=$((absent + 1)); fi
+          done
+
+          if [ "$present" -eq 0 ]; then
             echo "No Developer ID secrets — building ad-hoc signed."
             echo "signed=false" >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+          if [ "$absent" -ne 0 ]; then
+            echo "::error::Developer ID signing needs all three of MACOS_CERTIFICATE, MACOS_CERTIFICATE_PASSWORD and MACOS_SIGNING_IDENTITY — $absent of them are unset."
+            exit 1
           fi
 
           keychain="$RUNNER_TEMP/cadent-signing.keychain-db"
@@ -96,14 +112,21 @@ jobs:
 
           echo "signed=true" >> "$GITHUB_OUTPUT"
           echo "keychain=$keychain" >> "$GITHUB_OUTPUT"
+          # Later steps take the identity from here rather than from the secret
+          # directly, so it cannot be set unless the certificate it names is
+          # actually in a keychain. Still masked in logs, being a secret value.
+          echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
 
       - name: Build frozen app (PyInstaller .app bundle)
         env:
           CADENT_VERSION: ${{ steps.version.outputs.version }}
-          # Empty when unsigned, which the spec reads as "ad-hoc". PyInstaller
-          # signs each collected binary as it places it — innermost first, the
-          # order codesign wants and the one `--deep` gets wrong.
-          CADENT_CODESIGN_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          # Empty unless the certificate imported, which the spec reads as
+          # "ad-hoc". Reading the step output rather than the secret is what
+          # keeps that one decision honest: an identity with no key behind it
+          # would fail here, deep inside PyInstaller. It signs each collected
+          # binary as it places it — innermost first, the order codesign wants
+          # and the one `--deep` gets wrong.
+          CADENT_CODESIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
         run: uv run python scripts/build.py --skip-sync
 
       - name: Verify the signature
@@ -121,7 +144,7 @@ jobs:
       - name: Sign the disk image
         if: steps.signing.outputs.signed == 'true'
         env:
-          IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          IDENTITY: ${{ steps.signing.outputs.identity }}
         run: codesign --force --timestamp --sign "$IDENTITY" dist/installer/*.dmg
 
       - name: Notarize and staple
@@ -131,11 +154,27 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
           TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
         run: |
-          if [ -z "$APPLE_ID" ]; then
-            echo "::warning::Signed but not notarized — no notary secrets. " \
-                 "Gatekeeper will still block this image on first open."
+          present=0
+          absent=0
+          for value in "$APPLE_ID" "$APPLE_PASSWORD" "$TEAM_ID"; do
+            if [ -n "$value" ]; then present=$((present + 1)); else absent=$((absent + 1)); fi
+          done
+
+          # The same three states as the certificate above, with one
+          # difference: signed-but-not-notarized is a real rung rather than a
+          # mistake — Gatekeeper still stops the first open, but TCC grants
+          # survive updates — so no notary secrets warns and ships. A partial
+          # set still fails, and fails here rather than inside notarytool with
+          # an empty password, which would lose the image built two steps ago.
+          if [ "$present" -eq 0 ]; then
+            echo "::warning::Signed but not notarized (no notary secrets) — Gatekeeper still blocks the first open."
             exit 0
           fi
+          if [ "$absent" -ne 0 ]; then
+            echo "::error::Notarization needs all three of MACOS_NOTARY_APPLE_ID, MACOS_NOTARY_PASSWORD and MACOS_NOTARY_TEAM_ID — $absent of them are unset."
+            exit 1
+          fi
+
           dmg=$(ls dist/installer/*.dmg)
           # Submitting the image notarizes the app inside it. Stapling the
           # image is what makes the check work offline; an app dragged out and

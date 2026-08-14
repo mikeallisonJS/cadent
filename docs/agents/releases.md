@@ -39,11 +39,21 @@ without one):
    same tag and attaches to the same release. The two legs are independent,
    so a failure on one still ships the other.
 
-The macOS leg is ad-hoc signed unless the Developer ID secrets are set — the
-workflow header names the six and what each does. Unsigned means users
-right-click ▸ Open once, and re-grant Accessibility after every update, since
-macOS keys TCC off the signature. That is the thing worth fixing first if the
-Mac build ever gets real users.
+The macOS leg has three signing states, and the secrets decide which one a
+release lands on. The workflow header names all six and what each does.
+
+- **Ad-hoc** (no `MACOS_*` secrets) — what ships today. Enough for arm64 to
+  load the app at all, and nothing more: users right-click ▸ Open past
+  Gatekeeper once, and re-grant Accessibility after every update, because an
+  ad-hoc signature changes with each build and macOS keys TCC off it.
+- **Developer ID, not notarized** (the three certificate secrets) — grants now
+  survive updates, but Gatekeeper still stops the first open, so the
+  right-click stays. The workflow warns when a build lands here.
+- **Developer ID, notarized** (all six) — double-click, no warning, grants
+  persist. Worth reaching for first if the Mac build gets real users.
+
+A partial set of either trio fails the build rather than falling back: half a
+configuration is a mistake, not a request for an ad-hoc release.
 
 Local dry-run: `uv run python scripts/release.py next-version` shows what the
 pending fragments add up to.
