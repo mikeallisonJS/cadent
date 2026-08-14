@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements for the Developer ID path (#171).
+
+  Only used when the workflow has a signing identity: notarization requires
+  the hardened runtime, and the hardened runtime switches off two things this
+  app genuinely needs. The ad-hoc build ignores this file, having no hardened
+  runtime to relax.
+
+  Deliberately absent: the App Sandbox. Cadent taps global keystrokes and
+  pastes into other apps, neither of which a sandboxed app may do.
+
+  (An XML comment may not contain a double hyphen, which is why no codesign
+  flag is spelled out above. tests/test_packaging.py parses this file so a
+  malformed edit fails there rather than on a tag build.)
+-->
+<plist version="1.0">
+<dict>
+	<!-- The frozen app loads dylibs signed by other teams or not at all:
+	     libctranslate2, onnxruntime, and llama.cpp's backends, which
+	     llama_cpp reaches by ctypes at runtime. Library validation would
+	     refuse every one of them. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+	<!-- Under the hardened runtime the microphone needs the entitlement as
+	     well as the Info.plist usage string; without it the TCC prompt never
+	     appears and capture returns silence. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+</dict>
+</plist>

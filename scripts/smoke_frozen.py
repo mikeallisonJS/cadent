@@ -1,9 +1,13 @@
-"""Smoke-check the frozen build (#47): the exe starts, stays up, and holds
-the single-instance mutex. Dictating into a real app stays a human step —
+"""Smoke-check the frozen build (#47): the app starts, stays up, and holds
+the single-instance guard. Dictating into a real app stays a human step —
 this proves the bundle launches, not that the mic works.
 
 Usage: python scripts/smoke_frozen.py  (after scripts/build.py; quit any
-running Cadent first — the mutex is global to the session)
+running Cadent first — the guard is per-session on both OSes)
+
+macOS runs the executable inside the bundle rather than `open -a` (#171): a
+launched .app returns immediately and tells us nothing about the process, and
+the second-instance check needs a real exit code.
 """
 
 from __future__ import annotations
@@ -13,7 +17,13 @@ import sys
 import time
 from pathlib import Path
 
-EXE = Path(__file__).resolve().parent.parent / "dist" / "Cadent" / "Cadent.exe"
+DIST = Path(__file__).resolve().parent.parent / "dist"
+IS_DARWIN = sys.platform == "darwin"
+
+EXE = (DIST / "Cadent.app" / "Contents" / "MacOS" / "Cadent" if IS_DARWIN
+       else DIST / "Cadent" / "Cadent.exe")
+LOG_HINT = ("~/Library/Application Support/Cadent/cadent.log" if IS_DARWIN
+            else "%LOCALAPPDATA%/Cadent/cadent.log")
 STARTUP_GRACE_S = 20    # imports + Qt + tray + background STT preload kickoff
 
 
@@ -31,27 +41,28 @@ def main() -> int:
     while time.monotonic() < deadline:
         code = proc.poll()
         if code == 1:
-            return fail("exe exited 1 immediately — another Cadent is "
+            return fail("app exited 1 immediately — another Cadent is "
                         "already running; quit it and retry")
         if code is not None:
-            return fail(f"exe died during startup (exit code {code}) — "
-                        "see %LOCALAPPDATA%/Cadent/cadent.log")
+            return fail(f"app died during startup (exit code {code}) — "
+                        f"see {LOG_HINT}")
         time.sleep(0.5)
 
-    # A second copy must bounce off the mutex — proves the first one really
+    # A second copy must bounce off the single-instance guard — the named
+    # mutex on Windows, the flock on macOS — which proves the first one really
     # is Cadent up and running, not a zombie process object.
     second = subprocess.run([str(EXE)], timeout=30)
     if second.returncode != 1:
         proc.terminate()
         return fail(f"second instance exited {second.returncode}, expected 1 "
-                    "(single-instance mutex not held)")
+                    "(single-instance guard not held)")
 
     proc.terminate()
     try:
         proc.wait(timeout=10)
     except subprocess.TimeoutExpired:
         proc.kill()
-    print(f"SMOKE OK: launched, alive after {STARTUP_GRACE_S}s, mutex held.")
+    print(f"SMOKE OK: launched, alive after {STARTUP_GRACE_S}s, guard held.")
     print("Manual step: run the exe and dictate once (raw + flow).")
     return 0
 

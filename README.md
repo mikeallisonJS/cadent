@@ -40,10 +40,18 @@ python -m cadent
 
 ### macOS
 
-No installer and no `.app` bundle — a Mac runs it from a source checkout, with
-[uv](https://docs.astral.sh/uv/) and the Xcode Command Line Tools as the two
-prerequisites. The CLT are what build `llama-cpp-python`: macOS has no wheel
-for it, so cleanup compiles from source (~60 s, Metal on by default).
+Cadent ships as a disk image for Apple silicon — see
+[Releases](https://github.com/mikeallisonJS/cadent/releases). Open it, drag
+**Cadent** to Applications, and the first time you launch it, **right-click the
+app ▸ Open**: the build carries no Apple developer certificate, so a
+double-click gets Gatekeeper's refusal rather than a prompt. For the same
+reason macOS treats each update as a different app, and asks for Accessibility
+again after one. Cadent lives in the menu bar, not the Dock.
+
+To run from source instead, [uv](https://docs.astral.sh/uv/) and the Xcode
+Command Line Tools are the two prerequisites. The CLT are what build
+`llama-cpp-python`: macOS has no wheel for it, so cleanup compiles from source
+(~60 s, Metal on by default).
 
 ```sh
 curl -LsSf https://astral.sh/uv/install.sh | sh   # installs to ~/.local/bin

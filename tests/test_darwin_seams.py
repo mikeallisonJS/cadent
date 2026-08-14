@@ -64,6 +64,21 @@ def test_run_command_is_the_venv_module_entrypoint():
         shlex.join([sys.executable, "-m", "cadent"])
 
 
+def test_frozen_build_registers_the_bundle_executable(monkeypatch, tmp_path):
+    """Inside Cadent.app (#171) `sys.executable` is the app itself, so the
+    login item is that path and nothing else — the twin of the Run key's
+    frozen branch."""
+    monkeypatch.setattr("sys.frozen", True, raising=False)
+    monkeypatch.setattr("sys.executable",
+                        "/Applications/Cadent.app/Contents/MacOS/Cadent")
+
+    autostart = DarwinAutostart(agents_dir=tmp_path)
+    autostart.set_enabled(True)
+    payload = plistlib.loads((tmp_path / f"{LAUNCH_AGENT_LABEL}.plist").read_bytes())
+    assert payload["ProgramArguments"] == \
+        ["/Applications/Cadent.app/Contents/MacOS/Cadent"]
+
+
 def test_default_plist_lives_in_launch_agents():
     path = DarwinAutostart()._plist_path
     assert path.parent.name == "LaunchAgents"

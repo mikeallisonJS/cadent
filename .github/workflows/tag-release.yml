@@ -1,11 +1,12 @@
 # Tag on release-PR merge (#168): reads the just-merged version from
 # pyproject.toml, tags the merge commit, publishes the GitHub Release with the
 # curated CHANGELOG.md section (auto-generated notes kept as an appendix), and
-# dispatches build-installer at the tag ref. The explicit dispatch exists
-# because a GITHUB_TOKEN-pushed tag never fires `on: push: tags` — and
-# build-installer already derives everything it needs from the tag ref, so it
-# needs no changes. Creating the release first means build-installer's own
-# `gh release create --generate-notes` sees it exists and only uploads.
+# dispatches the platform installer builds at the tag ref. The explicit
+# dispatch exists because a GITHUB_TOKEN-pushed tag never fires
+# `on: push: tags` — and each build workflow already derives everything it
+# needs from the tag ref, so neither needs changes. Creating the release first
+# means their own `gh release create --generate-notes` sees it exists and only
+# uploads.
 
 name: tag-release
 
@@ -53,8 +54,13 @@ jobs:
           echo "</details>" >> body.md
           gh release create "v$V" --title "v$V" --notes-file body.md
 
-      - name: Build installer at the tag
+      - name: Build installers at the tag
         env:
           GH_TOKEN: ${{ github.token }}
           V: ${{ steps.version.outputs.version }}
-        run: gh workflow run build-installer.yml --ref "v$V"
+        # One dispatch per platform leg (#171). Both attach to the release the
+        # step above created, and neither depends on the other, so they run
+        # concurrently and a failure on one still ships the other.
+        run: |
+          gh workflow run build-installer.yml --ref "v$V"
+          gh workflow run build-installer-macos.yml --ref "v$V"
