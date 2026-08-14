@@ -66,7 +66,8 @@ class _Bridge(QObject):
     llm_failed = Signal(str)
     gpu_offer = Signal()        # STT landed on CPU with an NVIDIA GPU idle (#55)
     gpu_installed = Signal(str) # support pack install finished; arg = error or ""
-    wizard_download_done = Signal(str, str)    # outcome, detail (#114)
+    speech_load_done = Signal(str, str)        # outcome, detail (#114)
+    download_started = Signal(str)             # what — a fetch is under way
     download_progress = Signal(str, object)    # what, Progress (#115)
     download_finished = Signal(str)            # what — however it ended
 
@@ -159,7 +160,8 @@ class CadentApp:
         self.bridge.llm_failed.connect(self._handle_llm_failure)
         self.bridge.gpu_offer.connect(self._on_gpu_offer)
         self.bridge.gpu_installed.connect(self._on_gpu_installed)
-        self.bridge.wizard_download_done.connect(self._on_wizard_download_done)
+        self.bridge.speech_load_done.connect(self._on_speech_load_done)
+        self.bridge.download_started.connect(self._on_download_started)
         self.bridge.download_progress.connect(self._on_download_progress)
         self.bridge.download_finished.connect(self._on_download_finished)
         # The try-it step is the one place the pill's state also needs a
@@ -201,10 +203,15 @@ class CadentApp:
     def _get_stt(self):
         return self._stt
 
-    def _load_stt(self) -> str:
+    def _load_stt(self, download: downloads.Download | None = None) -> str:
         """Bring the speech engine up, downloading the weights if they are not
         there yet. Returns how it ended — the wizard needs to tell a cancel
-        apart from a failure, and only this call knows which it was."""
+        apart from a failure, and only this call knows which it was.
+
+        `download` is a handle the caller registered before starting this
+        thread; None means "register one if a fetch turns out to be needed",
+        which is what the startup preload and the #38 recovery do.
+        """
         with self._stt_lock:
             if self._stt is not None:
                 return LOADED
@@ -213,7 +220,7 @@ class CadentApp:
                                         self.config.stt_device, local_files_only=True)
             except Exception:
                 # model not on disk yet → explicit, disclosed download
-                outcome = self._download_and_load()
+                outcome = self._download_and_load(download)
                 if outcome != LOADED:
                     return outcome
         if gpu_pack.should_offer(self.config.stt_device,
@@ -223,7 +230,8 @@ class CadentApp:
             self.bridge.gpu_offer.emit()
         return LOADED
 
-    def _download_and_load(self) -> str:
+    def _download_and_load(self,
+                           download: downloads.Download | None = None) -> str:
         """The disclosed download, pulled in front of the load rather than left
         buried inside it — which is what lets the tray report it and the wizard
         stop it (#114, #115).
@@ -238,7 +246,9 @@ class CadentApp:
         one that hardcodes its progress bar off. But a Cancel arriving in the
         load window must still find a live download to talk to: an empty
         register is what would let the wizard report a cancellation nobody
-        performed, which is the exact defect #114 is about.
+        performed, which is the exact defect #114 is about. Since the same
+        defect lived in the window *before* this call, a speech request now
+        arrives with its handle already registered and hands it in here.
         """
         self.tray.message(
             "Cadent — one-time model download",
@@ -246,7 +256,7 @@ class CadentApp:
             "This is the only network activity Cadent performs. "
             "Dictation is disabled until it finishes.",
             QSystemTrayIcon.MessageIcon.Information, 10_000)
-        with self._watching(SPEECH_MODEL) as download:
+        with self._watching(SPEECH_MODEL, download) as download:
             try:
                 stt.prefetch(self.config.stt_model, download)
             except downloads.Cancelled:
@@ -266,8 +276,36 @@ class CadentApp:
                           QSystemTrayIcon.MessageIcon.Information, 4_000)
         return LOADED
 
+    def _register(self, what: str) -> downloads.Download:
+        """Take out a handle on a fetch, which may not have begun yet.
+
+        Separate from `_watching` because the speech path registers at the
+        moment of the *request* and only reaches the fetch a `make_engine`
+        probe later. A Cancel arriving in between used to find an empty
+        register, tell both surfaces the download was cancelled, and let it run
+        on regardless — #114's defect with a smaller window. `fetch` checks the
+        flag before its first byte, so a handle taken out this early is one
+        that can actually stop something.
+        """
+        download = downloads.Download(
+            lambda reading: self.bridge.download_progress.emit(what, reading))
+        self._downloads[what] = download
+        return download
+
+    def _release(self, what: str, download: downloads.Download) -> None:
+        """Let go of a handle — but only while it is still the registered one.
+
+        A request that superseded this one owns the key now, and an
+        unconditional pop is how a worker on its way out used to evict its
+        replacement: the next Cancel then reached nothing and reported a
+        cancellation for a download that was still running.
+        """
+        if self._downloads.get(what) is download:
+            del self._downloads[what]
+
     @contextmanager
-    def _watching(self, what: str):
+    def _watching(self, what: str,
+                  download: downloads.Download | None = None):
         """Run a download where every surface can see it.
 
         Readings cross to the UI thread through the bridge, because `fetch`
@@ -275,23 +313,59 @@ class CadentApp:
         rather than held as one handle: a speech model and a cleanup model can
         be fetched at once — two threads, started independently — and a cancel
         has to reach the right one of them.
+
+        `download` is a handle already taken out by `_register`, which is how
+        the speech path arrives; whoever registered it releases it. Everything
+        else registers and releases here, which is the whole of its lifetime.
         """
-        download = downloads.Download(
-            lambda reading: self.bridge.download_progress.emit(what, reading))
-        self._downloads[what] = download
+        own = download is None
+        if own:
+            download = self._register(what)
+        # Emitted here rather than at registration: this is where a fetch
+        # genuinely begins, and a surface told otherwise would paint a bar for
+        # a model that turns out to be on disk already.
+        self.bridge.download_started.emit(what)
         try:
             yield download
         finally:
-            self._downloads.pop(what, None)
+            if own:
+                self._release(what, download)
             self.bridge.download_finished.emit(what)
+
+    def _speech_surfaces(self) -> list:
+        """Everything on screen that has a speech download to paint.
+
+        The wizard downloads because it was clicked; Settings ▸ Speech is
+        handed a download that whatever the user picked set off. Both want the
+        same three things said to them, so the fan-out is one list rather than
+        two branches that drift.
+        """
+        surfaces = []
+        if self.wizard is not None and self.wizard.isVisible():
+            surfaces.append(self.wizard)
+        window = self.settings_window
+        if window is not None and window.isVisible():
+            surfaces.append(window.speech)
+        return surfaces
+
+    def _on_download_started(self, what: str) -> None:
+        """Settings never asked for this one — a model picked from its own list
+        starts a fetch several layers down — so it is told, rather than
+        assuming from the first byte that lands."""
+        if what != SPEECH_MODEL:
+            return
+        window = self.settings_window
+        if window is not None and window.isVisible():
+            window.speech.mark_download_started()
 
     def _on_download_progress(self, what: str, reading: downloads.Progress) -> None:
         self.tray.set_download(what, reading)
-        # The wizard has one bar, for the one download it started. A cleanup
-        # model arriving in the background must not paint over it.
-        if what == SPEECH_MODEL and self.wizard is not None \
-                and self.wizard.isVisible():
-            self.wizard.report_progress(reading)
+        # One bar per surface, for the one speech download. A cleanup model
+        # arriving in the background must not paint over it.
+        if what != SPEECH_MODEL:
+            return
+        for surface in self._speech_surfaces():
+            surface.report_progress(reading)
 
     def _on_download_finished(self, _what: str) -> None:
         """The tray carries one line, so it simply goes quiet. Anything still
@@ -716,7 +790,7 @@ class CadentApp:
                                   install_gpu_pack=self._on_gpu_download_clicked)
         self.wizard.finished_setup.connect(self._on_wizard_finished)
         self.wizard.download_requested.connect(self._download_model_for_wizard)
-        self.wizard.cancel_requested.connect(self._cancel_wizard_download)
+        self.wizard.cancel_requested.connect(self._cancel_speech_download)
         self.wizard.show()
 
     def _wizard_wants_hotkey(self) -> bool:
@@ -741,37 +815,69 @@ class CadentApp:
         """
         self.store.set("stt_engine", settings_logic.engine_for_model(model))
         self.store.set("stt_model", model)
-        self._stt = None
-        threading.Thread(target=self._load_stt_for_wizard, daemon=True).start()
+        self._download_speech_model()
 
-    def _cancel_wizard_download(self) -> None:
-        """The wizard's Cancel, connected to the fetch it is actually watching.
+    def _cancel_speech_download(self) -> None:
+        """Cancel, from the wizard or from Settings, connected to the fetch
+        those surfaces are actually watching.
 
-        Before #114 this signal had no consumer at all. It now stops one
-        specific download — not whatever happens to be running — and answers
-        immediately when there is nothing left to stop, so the page can never
-        sit on "Cancelling…" waiting for a confirmation that will not come.
+        Before #114 the wizard's signal had no consumer at all. It now stops
+        one specific download — not whatever happens to be running — and
+        answers immediately when there is nothing left to stop, so neither
+        surface can sit on "Cancelling…" waiting for a confirmation that will
+        not come.
         """
         download = self._downloads.get(SPEECH_MODEL)
         if download is not None:
             download.cancel()
             return
-        if self.wizard is not None:
-            self.wizard.mark_download_cancelled()
+        self._on_speech_load_done(CANCELLED, "")
 
-    def _load_stt_for_wizard(self) -> None:
-        outcome = self._load_stt()
+    def _download_speech_model(self) -> None:
+        """Every speech request: the wizard's button, a model picked in
+        Settings, and Settings' way out of a dead end. The model is already in
+        the config — what is missing is an attempt at it.
+
+        **A new request supersedes the running one**, rather than being queued
+        behind it or refused. The bytes in flight are for a model the user has
+        just moved off, and `_load_stt` holds `_stt_lock` for the whole
+        download — so queueing would leave the pane visibly stuck behind a
+        3.1 GB fetch nobody wants any more.
+        """
+        superseded = self._downloads.get(SPEECH_MODEL)
+        if superseded is not None:
+            superseded.cancel()
+        self._stt = None
+        # Registered before the worker exists, so a Cancel in the window
+        # between the click and the first byte has something to cancel.
+        download = self._register(SPEECH_MODEL)
+        threading.Thread(target=self._load_stt_and_report, args=(download,),
+                         daemon=True).start()
+
+    def _load_stt_and_report(self,
+                             download: downloads.Download | None = None) -> None:
+        superseded = False
+        try:
+            outcome = self._load_stt(download)
+        finally:
+            if download is not None:
+                superseded = self._downloads.get(SPEECH_MODEL) is not download
+                self._release(SPEECH_MODEL, download)
+        if superseded and outcome == CANCELLED:
+            # Cancelled because a newer request took over, not because anyone
+            # asked for nothing. That request owns the surfaces now, and is
+            # about to tell them it is downloading.
+            return
         detail = "" if outcome == LOADED else "see the tray notification"
         # Marshalled through the bridge: _load_stt runs off the UI thread.
-        self.bridge.wizard_download_done.emit(outcome, detail)
+        self.bridge.speech_load_done.emit(outcome, detail)
 
-    def _on_wizard_download_done(self, outcome: str, detail: str) -> None:
-        if self.wizard is None:
-            return
-        if outcome == CANCELLED:
-            self.wizard.mark_download_cancelled()
-        else:
-            self.wizard.mark_download_finished(outcome == LOADED, detail)
+    def _on_speech_load_done(self, outcome: str, detail: str) -> None:
+        for surface in self._speech_surfaces():
+            if outcome == CANCELLED:
+                surface.mark_download_cancelled()
+            else:
+                surface.mark_download_finished(outcome == LOADED, detail)
 
     def _on_wizard_finished(self, completed: bool) -> None:
         self.tray.set_fault("setup-unfinished", not completed)
@@ -806,8 +912,18 @@ class CadentApp:
             self.settings_window.theme_requested.connect(self._on_theme_preference)
             self.settings_window.wizard_requested.connect(self._run_wizard)
             self.settings_window.move_overlay_requested.connect(self._move_overlay)
+            self.settings_window.model_download_requested.connect(
+                self._download_speech_model)
+            self.settings_window.model_download_cancel_requested.connect(
+                self._cancel_speech_download)
             self.settings_window.ctx.dropped_hotwords = self._dropped_hotwords
             self.settings_window.show()
+            # A fetch that began before this window did. The pane has no way to
+            # know — `download_started` fired while there was nobody to hear it
+            # — and a Settings window that opens mid-download showing nothing is
+            # the silence #115 is about.
+            if SPEECH_MODEL in self._downloads:
+                self.settings_window.speech.mark_download_started()
         else:
             self.settings_window.raise_()
             self.settings_window.activateWindow()
@@ -838,9 +954,10 @@ class CadentApp:
             self.ptt.start()
         elif engine == "stt":
             # Detach first so dictations report not-ready instead of using the
-            # old model (same pattern as the #38 crash recovery).
-            self._stt = None
-            threading.Thread(target=self._load_stt, daemon=True).start()
+            # old model (same pattern as the #38 crash recovery). Reported
+            # rather than fired and forgotten since #115: the pane that made
+            # this change is the one owed the outcome.
+            self._download_speech_model()
         elif engine == "llm":
             self.cleaner.model_path = self.config.llm_model_path
             self.cleaner.max_tokens = self.config.llm_max_tokens

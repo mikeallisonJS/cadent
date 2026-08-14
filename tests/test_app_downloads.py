@@ -41,11 +41,21 @@ class FakeTray:
         self.shown.append((what, progress))
 
 
-class FakeWizard:
+class FakeSurface:
+    """A wizard model page or a Settings ▸ Speech pane.
+
+    They are one interface on purpose (#115): whatever the app has to say about
+    a speech download, it says the same way to whichever of them is on screen.
+    """
+
     def __init__(self) -> None:
         self.cancelled = 0
+        self.started = 0
         self.finished: list[tuple] = []
         self.readings: list[Progress] = []
+
+    def mark_download_started(self) -> None:
+        self.started += 1
 
     def mark_download_cancelled(self) -> None:
         self.cancelled += 1
@@ -60,6 +70,53 @@ class FakeWizard:
         return True
 
 
+class FakeSettingsWindow:
+    """Only the part app.py reaches for: the pane behind `.speech`."""
+
+    def __init__(self) -> None:
+        self.speech = FakeSurface()
+
+    def isVisible(self) -> bool:  # noqa: N802
+        return True
+
+
+# The wizard is one of the two surfaces, and every test that had one still
+# reads that way.
+FakeWizard = FakeSurface
+
+
+class Deferred:
+    """A `threading.Thread` stand-in that captures the worker instead of
+    running it.
+
+    The races these tests are about all live in the window between a request
+    being registered and its fetch beginning. A real thread makes that window
+    a matter of luck; holding the worker makes it a matter of when the test
+    says so.
+    """
+
+    def __init__(self) -> None:
+        self.workers: list = []
+
+    def __call__(self, target=None, args=(), daemon=False, **_kwargs):
+        self.workers.append(lambda: target(*args))
+        return types.SimpleNamespace(start=lambda: None)
+
+    def run_one(self) -> None:
+        self.workers.pop(0)()
+
+    def run_all(self) -> None:
+        while self.workers:
+            self.run_one()
+
+
+@pytest.fixture
+def deferred(monkeypatch):
+    stub = Deferred()
+    monkeypatch.setattr(threading, "Thread", stub)
+    return stub
+
+
 @pytest.fixture
 def app():
     instance = app_mod.CadentApp.__new__(app_mod.CadentApp)
@@ -67,11 +124,13 @@ def app():
     instance.tray = FakeTray()
     instance.bridge = types.SimpleNamespace(
         stt_failed=Sig(), stt_loaded=Sig(), gpu_offer=Sig(),
+        speech_load_done=Sig(), download_started=Sig(),
         download_progress=Sig(), download_finished=Sig())
     instance._stt = None
     instance._stt_lock = threading.Lock()
     instance._downloads = {}
     instance.wizard = None
+    instance.settings_window = None
     return instance
 
 
@@ -164,7 +223,7 @@ def test_a_cancel_during_the_load_is_not_reported_as_a_cancellation(app, monkeyp
     def load_after_a_cancel(*_args, **kwargs):
         if kwargs.get("local_files_only"):
             raise OSError("model is not cached locally")
-        app._cancel_wizard_download()      # lands while the engine is loading
+        app._cancel_speech_download()      # lands while the engine is loading
         return types.SimpleNamespace(device="cpu")
 
     app.wizard = FakeWizard()
@@ -178,7 +237,7 @@ def test_a_cancel_during_the_load_is_not_reported_as_a_cancellation(app, monkeyp
 def test_the_wizards_cancel_stops_the_speech_download(app):
     app.wizard = FakeWizard()
     with app._watching(app_mod.SPEECH_MODEL) as download:
-        app._cancel_wizard_download()
+        app._cancel_speech_download()
         assert download.cancelled is True
     # It asks the fetch to stop; it does not tell the page it already has.
     assert app.wizard.cancelled == 0
@@ -190,7 +249,7 @@ def test_the_wizards_cancel_leaves_a_cleanup_download_alone(app):
     """
     app.wizard = FakeWizard()
     with app._watching(app_mod.CLEANUP_MODEL) as cleanup:
-        app._cancel_wizard_download()
+        app._cancel_speech_download()
         assert cleanup.cancelled is False
 
 
@@ -199,7 +258,7 @@ def test_a_cancel_with_nothing_left_to_stop_still_answers_the_wizard(app):
     page sits on "Cancelling…" waiting for a confirmation that never comes."""
     app.wizard = FakeWizard()
 
-    app._cancel_wizard_download()
+    app._cancel_speech_download()
 
     assert app.wizard.cancelled == 1
 
@@ -246,7 +305,175 @@ def test_only_the_speech_download_paints_the_wizards_bar(app):
 def test_a_cancelled_load_tells_the_wizard_so_rather_than_that_it_failed(app):
     app.wizard = FakeWizard()
 
-    app._on_wizard_download_done(app_mod.CANCELLED, "")
+    app._on_speech_load_done(app_mod.CANCELLED, "")
 
     assert app.wizard.cancelled == 1
+    assert app.wizard.finished == []
+
+
+# ---- Settings watches the same download the wizard does ---------------------
+
+
+def test_settings_is_told_when_a_speech_download_begins(app):
+    """The pane never asked for this one: picking a model from its own list
+    sets a fetch off several layers down. Assuming it from the first byte would
+    leave the window blank for however long `model_info` takes."""
+    app.settings_window = FakeSettingsWindow()
+
+    with app._watching(app_mod.SPEECH_MODEL):
+        pass
+
+    assert app.bridge.download_started.emitted == [(app_mod.SPEECH_MODEL,)]
+
+
+def test_both_surfaces_paint_the_same_speech_download(app):
+    """Setup and Settings are one feature with one answer — a download you can
+    watch in the wizard and not in Settings is the gap #115 leaves behind."""
+    app.wizard = FakeWizard()
+    app.settings_window = FakeSettingsWindow()
+
+    app._on_download_progress(app_mod.SPEECH_MODEL, Progress(2, 4))
+
+    assert app.wizard.readings == [Progress(2, 4)]
+    assert app.settings_window.speech.readings == [Progress(2, 4)]
+
+
+def test_a_cleanup_download_paints_neither_of_them(app):
+    app.wizard = FakeWizard()
+    app.settings_window = FakeSettingsWindow()
+
+    app._on_download_progress(app_mod.CLEANUP_MODEL, Progress(1, 4))
+    app._on_download_started(app_mod.CLEANUP_MODEL)
+
+    assert app.wizard.readings == []
+    assert app.settings_window.speech.readings == []
+    assert app.settings_window.speech.started == 0
+
+
+def test_a_speech_download_beginning_reaches_settings_only(app):
+    """The wizard sets its own state the moment its button is clicked, so
+    telling it again would be a second start for one download."""
+    app.wizard = FakeWizard()
+    app.settings_window = FakeSettingsWindow()
+
+    app._on_download_started(app_mod.SPEECH_MODEL)
+
+    assert app.settings_window.speech.started == 1
+    assert app.wizard.readings == []
+
+
+def test_settings_cancel_reaches_the_same_fetch_the_wizards_does(app):
+    app.settings_window = FakeSettingsWindow()
+    with app._watching(app_mod.SPEECH_MODEL) as download:
+        app._cancel_speech_download()
+        assert download.cancelled is True
+    assert app.settings_window.speech.cancelled == 0
+
+
+def test_a_cancel_with_nothing_left_to_stop_answers_settings_too(app):
+    app.settings_window = FakeSettingsWindow()
+
+    app._cancel_speech_download()
+
+    assert app.settings_window.speech.cancelled == 1
+
+
+# ---- the register holds the whole request, not just the fetch ---------------
+
+
+def test_a_cancel_before_the_fetch_begins_still_stops_it(app, deferred, monkeypatch):
+    """The window between the request and the first byte is a `make_engine`
+    probe wide. A Cancel landing in it used to find an empty register, tell
+    both surfaces the download was cancelled, and let the fetch run on
+    regardless — #114's defect with a smaller window."""
+    fetched = []
+
+    def prefetch(_model, download):
+        download.raise_if_cancelled()   # `downloads.fetch`'s own first act
+        fetched.append(download)
+
+    monkeypatch.setattr(app_mod, "make_engine", no_model_on_disk)
+    monkeypatch.setattr(stt, "prefetch", prefetch)
+
+    app._download_speech_model()
+    app._cancel_speech_download()       # lands before the worker gets going
+    deferred.run_all()
+
+    assert fetched == []                # not one byte was asked for
+    assert [o for o, _detail in app.bridge.speech_load_done.emitted] \
+        == [app_mod.CANCELLED]
+
+
+def test_a_finishing_worker_does_not_evict_its_replacement(app):
+    """An unconditional pop is how the first of two requests used to take the
+    second one's handle with it, leaving the next Cancel reaching nothing and
+    reporting a cancellation for a download that was still running."""
+    first = app._register(app_mod.SPEECH_MODEL)
+    second = app._register(app_mod.SPEECH_MODEL)
+
+    app._release(app_mod.SPEECH_MODEL, first)
+
+    assert app._downloads[app_mod.SPEECH_MODEL] is second
+
+
+def test_a_new_request_supersedes_the_one_already_running(app, deferred):
+    """`_load_stt` holds the engine lock for the whole download, so queueing
+    the second pick behind the first would leave the pane stuck on a fetch
+    nobody wants any more."""
+    app._download_speech_model()
+    first = app._downloads[app_mod.SPEECH_MODEL]
+
+    app._download_speech_model()
+
+    assert first.cancelled is True
+    assert app._downloads[app_mod.SPEECH_MODEL] is not first
+
+
+def test_a_superseded_request_leaves_the_surfaces_to_the_one_that_took_over(
+        app, deferred, monkeypatch):
+    """It was cancelled because the user picked something else, not because
+    anyone asked for nothing. "Download cancelled." on a pane that is about to
+    say "Downloading…" reads as the new pick having failed."""
+    def superseded_partway(_model, download):
+        app._download_speech_model()    # takes the key, cancels this one
+        download.raise_if_cancelled()
+
+    monkeypatch.setattr(app_mod, "make_engine", no_model_on_disk)
+    monkeypatch.setattr(stt, "prefetch", superseded_partway)
+
+    app._download_speech_model()
+    deferred.run_one()          # only the first worker; the second still waits
+
+    assert app.bridge.speech_load_done.emitted == []
+
+
+def test_a_cancel_the_user_actually_asked_for_is_still_reported(app, deferred,
+                                                                monkeypatch):
+    """The other half of that branch: nothing about superseding makes a real
+    cancellation quieter."""
+    def cancel_partway(_model, download):
+        download.cancel()
+        download.raise_if_cancelled()
+
+    monkeypatch.setattr(app_mod, "make_engine", no_model_on_disk)
+    monkeypatch.setattr(stt, "prefetch", cancel_partway)
+
+    app._download_speech_model()
+    deferred.run_all()
+
+    assert [o for o, _detail in app.bridge.speech_load_done.emitted] \
+        == [app_mod.CANCELLED]
+    assert app._downloads == {}
+
+
+def test_a_hidden_surface_is_told_nothing(app):
+    """Both surfaces outlive their windows — `self.wizard` is never cleared —
+    and painting a closed one is a state that reappears on the next open."""
+    app.wizard = FakeWizard()
+    app.wizard.isVisible = lambda: False
+
+    app._on_download_progress(app_mod.SPEECH_MODEL, Progress(2, 4))
+    app._on_speech_load_done(app_mod.LOADED, "")
+
+    assert app.wizard.readings == []
     assert app.wizard.finished == []
