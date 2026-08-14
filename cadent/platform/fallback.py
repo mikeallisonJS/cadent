@@ -169,6 +169,13 @@ CAPABILITIES = Capabilities(
     modifier_captions={"ctrl": "Ctrl", "shift": "Shift", "alt": "Alt",
                        "option": "Alt", "win": "Win", "cmd": "Win"},
     tray_icon_is_template=False,
+    # The exception to mirroring win32: copy that *names an OS setting* has no
+    # portable Windows answer — a Linux user reading "your Windows app colour
+    # mode" is the app claiming a platform it isn't on. Neutral until an
+    # adapter arrives with the real names.
+    theme_subtitle="Follows your system colour mode",
+    high_contrast_reason=("Your system is using a contrast theme, so Cadent "
+                          "is following its colours"),
 )
 
 

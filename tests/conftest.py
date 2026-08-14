@@ -559,7 +559,10 @@ def pin_darwin_ui_platform(monkeypatch, *, granted=True, running=None,
         tray_icon_is_template=True,
         modifier_captions={"ctrl": "Ctrl", "shift": "Shift",
                            "alt": "Option", "option": "Option",
-                           "win": "Cmd", "cmd": "Cmd"})
+                           "win": "Cmd", "cmd": "Cmd"},
+        theme_subtitle="Follows your Mac's Appearance setting",
+        high_contrast_reason=("macOS is set to increase contrast, so "
+                              "Cadent is following your system colours"))
     plat = dataclasses.replace(plat, capabilities=caps)
     monkeypatch.setattr(platform_pkg, "_current", plat)
     return plat
@@ -574,8 +577,19 @@ def pinned_win32_facts(monkeypatch):
     deterministic on the darwin CI leg, where the real column now diverges
     (#144). Darwin-column behavior is tested by building darwin-shaped
     capabilities explicitly, never by running these tests on a Mac."""
+    import dataclasses
+
     plat = make_platform()
     from cadent import platform as platform_pkg
+
+    # Named-setting copy is the one column fallback deliberately does *not*
+    # mirror (it has no OS to name), so the win32 strings are spelled out here
+    # the way pin_darwin_ui_platform spells out darwin's.
+    plat = dataclasses.replace(plat, capabilities=dataclasses.replace(
+        plat.capabilities,
+        theme_subtitle="Follows your Windows app colour mode",
+        high_contrast_reason=("Windows is using a contrast theme, so Cadent "
+                              "is following your system colours")))
 
     # The memo, not the function: the `machine` fixture layers a hardware
     # probe on top via `dataclasses.replace(platform_pkg.current(), ...)`,

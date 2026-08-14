@@ -1,8 +1,15 @@
 [project]
 name = "cadent"
 version = "0.2.0"
-description = "Fully-local push-to-talk AI dictation for Windows: transcribe, clean up, insert at the cursor"
+description = "Fully-local push-to-talk AI dictation for Windows and macOS: transcribe, clean up, insert at the cursor"
 requires-python = ">=3.11"
+classifiers = [
+    # The two OSes with a real platform adapter and a CI leg. Anything else
+    # resolves to `platform/fallback.py`, which is a dev stub, not support.
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS :: MacOS X",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
 dependencies = [
     "faster-whisper>=1.1",
     "onnx-asr>=0.12",
@@ -78,8 +85,8 @@ override-dependencies = ["onnxruntime>=1.28; sys_platform != 'win32'"]
 # build dynamically links cudart/cublas that we would have to stage ourselves.
 # CPU stays reachable at runtime through `llm_runtime` — the wheel serves both.
 # Narrower than the CPU index it replaces: win_amd64 and manylinux x86_64 only,
-# no macOS or aarch64. That covers every platform this Windows-only app is
-# developed on, and the extra is optional everywhere else.
+# no macOS or aarch64 — which is why the source below markers it to win32 and
+# macOS builds the extra from source instead.
 [[tool.uv.index]]
 name = "llama-cpp-python-vulkan"
 url = "https://abetlen.github.io/llama-cpp-python/whl/vulkan"

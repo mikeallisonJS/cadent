@@ -1,7 +1,9 @@
 # Cadent
 
-Local, offline push-to-talk dictation for Windows: hotkey → record → transcribe →
-(optionally clean up) → inject into the focused app.
+Local, offline push-to-talk dictation for Windows and macOS: hotkey → record →
+transcribe → (optionally clean up) → inject into the focused app. Per-OS
+behaviour lives behind the platform seam (`cadent/platform/`, ADR 0005). Linux
+is planned and has no adapter yet, so it resolves to the inert fallback.
 
 ## Language
 

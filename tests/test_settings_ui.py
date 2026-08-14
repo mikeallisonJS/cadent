@@ -638,8 +638,28 @@ def test_choosing_a_file_writes_it_and_gives_it_a_row(speech_pane, gpu_box,
 
 def test_the_theme_row_says_which_windows_setting_it_follows(window):
     """Windows has two theme settings and Qt reports the *app* one, so
-    without the line a light Cadent on a dark taskbar reads as a bug."""
+    without the line a light Cadent on a dark taskbar reads as a bug. The
+    module pins the win32 column; the darwin one is covered below."""
     assert "Windows app colour mode" in window.general.theme.accessibleDescription()
+
+
+def test_the_theme_row_names_the_mac_setting_on_the_darwin_column(qt_app, paths,
+                                                                  monkeypatch):
+    """Copy that names an OS setting must name *this* OS's: a Mac told to
+    follow "your Windows app colour mode" is the app claiming a platform it
+    isn't on."""
+    from conftest import pin_darwin_ui_platform
+
+    pin_darwin_ui_platform(monkeypatch)
+    win = SettingsWindow(ConfigStore(paths / "config.json"), tokens=tokens("dark"),
+                         devices=[])
+    try:
+        described = win.general.theme.accessibleDescription()
+        assert "Appearance" in described
+        assert "Windows" not in described
+    finally:
+        win.close()
+        win.deleteLater()
 
 
 def test_choosing_a_theme_writes_it_and_asks_the_app_to_apply_it(window):
