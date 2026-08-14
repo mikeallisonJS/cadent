@@ -13,6 +13,7 @@ reason this runs at build time rather than scaling one source (#73).
 Run:  uv run python scripts/build_icons.py
 Out:  packaging/icons/png/mark-<state>-<size>.png   (18 files)
       packaging/icons/cadent.ico                 (multi-size, Ready)
+      packaging/icons/cadent.icns                (multi-size, Ready)
 """
 
 from __future__ import annotations
@@ -33,6 +34,19 @@ SIZES = [16, 20, 24, 32, 48, 256]
 # Below this the hand-corrected 16-unit source wins; at and above it the
 # 24-unit master does.
 HINT_CEILING = 20
+
+# The .icns entries, as (OSType, pixel size) — the PNG-capable types `iconutil`
+# emits for a full .iconset (#171). macOS addresses an icon by point size *and*
+# retina scale, so 32, 256 and 512 each appear twice under different types: a
+# 32px raster is both "32pt @1x" (icp5) and "16pt @2x" (ic11). Same bytes, two
+# names; dropping either leaves the Dock or Finder picking a size it has to
+# scale.
+ICNS_TYPES = [
+    (b"icp4", 16), (b"ic11", 32), (b"icp5", 32), (b"ic12", 64),
+    (b"ic07", 128), (b"ic13", 256), (b"ic08", 256), (b"ic14", 512),
+    (b"ic09", 512), (b"ic10", 1024),
+]
+ICNS_SIZES = sorted({size for _, size in ICNS_TYPES})
 
 
 def render(state: str, size: int, template: bool = False) -> QImage:
@@ -84,6 +98,26 @@ def write_ico(images: list[QImage], dest: Path) -> None:
     dest.write_bytes(header + directory + body)
 
 
+def write_icns(images: dict[int, QImage], dest: Path) -> None:
+    """Assemble a PNG-in-ICNS by hand, for the same reason `write_ico` does it
+    (#171): Qt's ICNS handler writes a single size, and `iconutil` — the tool
+    that would do this properly — only exists on macOS, where this build step
+    never runs. The container is trivial: the magic and a big-endian total
+    length, then one chunk per entry (4-byte OSType, big-endian length
+    *including* its own 8-byte header, payload).
+
+    Emitting the file here rather than on the runner keeps the mark a
+    committed artefact on both OSes — the macOS build consumes `cadent.icns`
+    exactly as the Windows one consumes `cadent.ico`.
+    """
+    payloads = {size: png_bytes(img) for size, img in images.items()}
+    body = b""
+    for ostype, size in ICNS_TYPES:
+        data = payloads[size]
+        body += ostype + struct.pack(">I", 8 + len(data)) + data
+    dest.write_bytes(b"icns" + struct.pack(">I", 8 + len(body)) + body)
+
+
 def main() -> None:
     app = QApplication(sys.argv)  # noqa: F841 - QImage/QPainter need one
     out = ICONS / "png"
@@ -106,9 +140,17 @@ def main() -> None:
     ico = ICONS / "cadent.ico"
     write_ico(ready, ico)
 
+    # The .app icon (#171). Its own size ladder, rendered fresh: the Dock and
+    # Finder ask up to 1024, four sizes past anything the tray or the .ico
+    # needs, and none of them belong in the runtime PNG set.
+    icns = icons.icns_path()
+    write_icns({size: render("ready", size) for size in ICNS_SIZES}, icns)
+
     print(f"  {2 * len(STATES) * len(SIZES)} PNGs -> {out}")
     print(f"  {ico.name} ({ico.stat().st_size:,} bytes, "
           f"{len(SIZES)} sizes) -> {ico.parent}")
+    print(f"  {icns.name} ({icns.stat().st_size:,} bytes, "
+          f"{len(ICNS_TYPES)} entries) -> {icns.parent}")
 
 
 if __name__ == "__main__":

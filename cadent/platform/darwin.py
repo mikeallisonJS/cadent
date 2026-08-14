@@ -70,8 +70,17 @@ class DarwinAutostart:
         return self._agents_dir / f"{LAUNCH_AGENT_LABEL}.plist"
 
     def _program_arguments(self) -> list[str]:
-        # The venv interpreter runs the module entrypoint; no pythonw
-        # analogue exists or is needed — launchd sessions have no console.
+        """What launchd runs at login: the installed bundle's executable when
+        packaged, else the venv interpreter on the module entrypoint.
+
+        Frozen is its own case (#171) — inside Cadent.app, `sys.executable`
+        *is* the app, and `-m cadent` would be two strings left sitting in the
+        argv of a process that has no module to run. This is the twin of the
+        Run-key adapter's frozen branch. No pythonw analogue is needed either
+        way: launchd sessions have no console.
+        """
+        if getattr(sys, "frozen", False):
+            return [sys.executable]
         return [sys.executable, "-m", "cadent"]
 
     def run_command(self) -> str:

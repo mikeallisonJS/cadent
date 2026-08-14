@@ -132,6 +132,59 @@ def test_write_ico_round_trips_what_it_was_given(qt_app, build_icons, tmp_path):
     assert QImage.fromData(entries[1]["payload"], "PNG").width() == 256
 
 
+# ---- the hand-assembled .icns (#171) ---------------------------------------
+
+def _parse_icns(data: bytes):
+    assert data[:4] == b"icns"
+    total = struct.unpack_from(">I", data, 4)[0]
+    assert total == len(data), "declared length must match the file"
+    entries, offset = [], 8
+    while offset < total:
+        ostype = data[offset:offset + 4]
+        length = struct.unpack_from(">I", data, offset + 4)[0]
+        entries.append({"type": ostype, "length": length,
+                        "payload": data[offset + 8:offset + length]})
+        offset += length
+    return entries
+
+
+def test_icns_carries_every_type_the_dock_and_finder_ask_for(qt_app, build_icons):
+    """A missing OSType is a size macOS has to scale — the .app icon equivalent
+    of the blurry-tray failure the PNG set exists to prevent."""
+    entries = _parse_icns(icons.icns_path().read_bytes())
+    assert [e["type"] for e in entries] == [t for t, _ in build_icons.ICNS_TYPES]
+
+
+def test_icns_payloads_are_png_at_the_size_their_type_declares(qt_app, build_icons):
+    """32, 256 and 512 each appear under two types (point size and retina
+    scale); both entries must really hold a raster of that size."""
+    entries = _parse_icns(icons.icns_path().read_bytes())
+    for entry, (_, size) in zip(entries, build_icons.ICNS_TYPES, strict=True):
+        assert entry["payload"].startswith(b"\x89PNG\r\n\x1a\n")
+        img = QImage.fromData(entry["payload"], "PNG")
+        assert (img.width(), img.height()) == (size, size)
+
+
+def test_qt_reads_the_icns_back_at_every_size(qt_app, build_icons):
+    """The reader check the .ico gets too: our container, so someone else's
+    parser has to accept it. macOS itself is the parser that matters, and
+    Qt's ICNS handler is the closest stand-in a Windows build machine has."""
+    from PySide6.QtGui import QIcon
+
+    icon = QIcon(str(icons.icns_path()))
+    assert {size.width() for size in icon.availableSizes()} == set(build_icons.ICNS_SIZES)
+
+
+def test_write_icns_round_trips_what_it_was_given(qt_app, build_icons, tmp_path):
+    dest = tmp_path / "out.icns"
+    build_icons.write_icns(
+        {size: build_icons.render("ready", size) for size in build_icons.ICNS_SIZES},
+        dest)
+    entries = _parse_icns(dest.read_bytes())
+    assert len(entries) == len(build_icons.ICNS_TYPES)
+    assert QImage.fromData(entries[-1]["payload"], "PNG").width() == 1024
+
+
 # ---- the darwin template set (#164) ----------------------------------------
 
 def test_every_template_state_ships_every_size(qt_app):

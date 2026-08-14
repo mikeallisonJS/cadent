@@ -1,0 +1,167 @@
+# Build the macOS installer (#171): PyInstaller onedir + BUNDLE via
+# scripts/build.py, wrapped in a drag-to-Applications disk image by
+# scripts/build_dmg.py. The macOS twin of build-installer.yml, kept as its own
+# file because almost nothing between the two legs is shared — different
+# artefact, different wrapper, and a signing story Windows doesn't have.
+#
+# Runs on version-tag push (v*) and by hand, like the Windows leg.
+# scripts/smoke_frozen.py stays a local step on both: the app's first run
+# downloads models, which a CI runner shouldn't do.
+#
+# Apple silicon only. The runtime stack has no universal2 build to freeze —
+# onnxruntime and ctranslate2 ship arm64 wheels, and llama-cpp-python compiles
+# from source here (docs/research/macos-dev-environment.md §2b) — so macos-14
+# is the target, matching the M1 Max the port is benched on and the test
+# workflow's macOS leg.
+#
+# Signing is optional and secret-gated. With no secrets the build is ad-hoc
+# signed, which is all arm64 needs to *load* the app; the user right-clicks ▸
+# Open past Gatekeeper once, and — because TCC keys its grants off the
+# signature — re-grants Accessibility after an update. Add the six secrets
+# below and the same workflow produces a signed, notarized image where neither
+# is true:
+#
+#   MACOS_CERTIFICATE           Developer ID Application .p12, base64-encoded
+#   MACOS_CERTIFICATE_PASSWORD  the .p12 export password
+#   MACOS_SIGNING_IDENTITY      e.g. "Developer ID Application: Name (TEAMID)"
+#   MACOS_NOTARY_APPLE_ID       Apple ID of the developer account
+#   MACOS_NOTARY_PASSWORD       an app-specific password for that Apple ID
+#   MACOS_NOTARY_TEAM_ID        the 10-character team id
+
+name: build-installer-macos
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # gh release upload on tag builds
+
+jobs:
+  dmg:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Determine version
+        id: version
+        run: |
+          # Digits and dots only: this becomes CFBundleVersion, which macOS
+          # compares numerically across updates. Manual runs build 0.0.0.
+          case "$GITHUB_REF" in
+            refs/tags/v*) version="${GITHUB_REF_NAME#v}" ;;
+            *)            version="0.0.0" ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        # all-extras brings the cleanup extra, and on macOS that means
+        # compiling llama.cpp — a few minutes, and the only way to get the
+        # Metal backend scripts/build.py insists on.
+        run: uv sync --all-extras
+
+      - name: Import signing certificate
+        id: signing
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          # Secrets aren't readable from `if:` expressions, so the decision is
+          # made here once and every later step keys off this output.
+          if [ -z "$CERTIFICATE" ] || [ -z "$IDENTITY" ]; then
+            echo "No Developer ID secrets — building ad-hoc signed."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          keychain="$RUNNER_TEMP/cadent-signing.keychain-db"
+          password="$(openssl rand -base64 24)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+
+          echo "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" \
+            -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/certificate.p12"
+          # Without the partition list codesign prompts for the key, and a
+          # runner has nobody to answer.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" login.keychain-db
+
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+          echo "keychain=$keychain" >> "$GITHUB_OUTPUT"
+
+      - name: Build frozen app (PyInstaller .app bundle)
+        env:
+          CADENT_VERSION: ${{ steps.version.outputs.version }}
+          # Empty when unsigned, which the spec reads as "ad-hoc". PyInstaller
+          # signs each collected binary as it places it — innermost first, the
+          # order codesign wants and the one `--deep` gets wrong.
+          CADENT_CODESIGN_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: uv run python scripts/build.py --skip-sync
+
+      - name: Verify the signature
+        if: steps.signing.outputs.signed == 'true'
+        run: |
+          # --strict catches a nested binary the signing pass missed; the
+          # runtime flag is what notarization refuses builds without.
+          codesign --verify --deep --strict --verbose=2 dist/Cadent.app
+          codesign --display --verbose=4 dist/Cadent.app 2>&1 | grep -q 'flags=.*runtime' \
+            || { echo "::error::app is not hardened-runtime signed"; exit 1; }
+
+      - name: Build the disk image
+        run: uv run python scripts/build_dmg.py --version ${{ steps.version.outputs.version }}
+
+      - name: Sign the disk image
+        if: steps.signing.outputs.signed == 'true'
+        env:
+          IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: codesign --force --timestamp --sign "$IDENTITY" dist/installer/*.dmg
+
+      - name: Notarize and staple
+        if: steps.signing.outputs.signed == 'true'
+        env:
+          APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+          TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+        run: |
+          if [ -z "$APPLE_ID" ]; then
+            echo "::warning::Signed but not notarized — no notary secrets. " \
+                 "Gatekeeper will still block this image on first open."
+            exit 0
+          fi
+          dmg=$(ls dist/installer/*.dmg)
+          # Submitting the image notarizes the app inside it. Stapling the
+          # image is what makes the check work offline; an app dragged out and
+          # first opened with no network still needs one online lookup.
+          xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" --team-id "$TEAM_ID" --wait
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+
+      - name: Remove the signing keychain
+        if: always() && steps.signing.outputs.keychain != ''
+        run: security delete-keychain "${{ steps.signing.outputs.keychain }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cadent-${{ steps.version.outputs.version }}-arm64-dmg
+          path: dist/installer/*.dmg
+          if-no-files-found: error
+
+      - name: Attach the disk image to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # tag-release.yml publishes the release before dispatching this, and
+          # the Windows leg may get here first — either way, create is a
+          # no-op we ignore and upload is the step that matters.
+          gh release create "$GITHUB_REF_NAME" --generate-notes || echo "release exists"
+          gh release upload "$GITHUB_REF_NAME" dist/installer/*.dmg --clobber

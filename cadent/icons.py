@@ -45,6 +45,12 @@ def ico_path() -> Path:
     return icons_dir() / "cadent.ico"
 
 
+def icns_path() -> Path:
+    """The .app bundle's icon (#171) — packaging only; nothing loads it at
+    runtime, since macOS reads it from the bundle itself."""
+    return icons_dir() / "cadent.icns"
+
+
 def _mark(state: str, template: bool) -> QIcon:
     if state not in STATES:
         state = "ready"
