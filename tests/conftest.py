@@ -559,7 +559,10 @@ def pin_darwin_ui_platform(monkeypatch, *, granted=True, running=None,
         tray_icon_is_template=True,
         modifier_captions={"ctrl": "Ctrl", "shift": "Shift",
                            "alt": "Option", "option": "Option",
-                           "win": "Cmd", "cmd": "Cmd"})
+                           "win": "Cmd", "cmd": "Cmd"},
+        theme_subtitle="Follows your Mac's Appearance setting",
+        high_contrast_reason=("macOS is set to increase contrast, so "
+                              "Cadent is following your system colours"))
     plat = dataclasses.replace(plat, capabilities=caps)
     monkeypatch.setattr(platform_pkg, "_current", plat)
     return plat

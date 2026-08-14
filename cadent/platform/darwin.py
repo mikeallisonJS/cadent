@@ -583,6 +583,13 @@ def create() -> Platform:
             modifier_captions={"ctrl": "Ctrl", "shift": "Shift",
                                "alt": "Option", "option": "Option",
                                "win": "Cmd", "cmd": "Cmd"},
+            # One Appearance control here, not Windows' app/system pair — and
+            # the contrast setting is called Increase contrast. Qt's
+            # contrastPreference() reports it on this platform too, so the
+            # reason line is reachable and must name the right setting.
+            theme_subtitle="Follows your Mac's Appearance setting",
+            high_contrast_reason=("macOS is set to increase contrast, so "
+                                  "Cadent is following your system colours"),
         ),
         keyboard=DarwinKeyboard(),
         clipboard=DarwinClipboard(),

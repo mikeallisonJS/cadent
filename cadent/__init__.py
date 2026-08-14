@@ -1,4 +1,4 @@
-"""Cadent — fully-local push-to-talk AI dictation for Windows."""
+"""Cadent — fully-local push-to-talk AI dictation for Windows and macOS."""
 
 from importlib.metadata import PackageNotFoundError, version
 

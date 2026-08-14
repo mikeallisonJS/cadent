@@ -1,7 +1,14 @@
 # Cadent — Product Requirements Document
 
 **Version:** 0.1 (Draft) · **Date:** 2026-07-23 · **Owner:** Mike Allison
-**One-liner:** A fully-local, privacy-first voice dictation app for Windows — hold a hotkey, speak, and polished text appears in whatever app you're using. Push-to-talk transcription with AI cleanup, and zero cloud dependency.
+**One-liner:** A fully-local, privacy-first voice dictation app — hold a hotkey, speak, and polished text appears in whatever app you're using. Push-to-talk transcription with AI cleanup, and zero cloud dependency.
+
+> **Superseded on one point.** This document specifies v1, which was Windows-only
+> by design; every "Windows" below should be read as the v1 scope, not as today's.
+> The macOS port shipped in M5 — see [`docs/specs/m5-macos-port-spec.md`](docs/specs/m5-macos-port-spec.md)
+> and ADRs [0001](docs/adr/0001-macos-pastes-by-default.md)–[0005](docs/adr/0005-platform-seam.md)
+> for what Windows and macOS each do now. Linux is planned but has no platform
+> adapter yet.
 
 ---
 

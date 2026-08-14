@@ -492,6 +492,12 @@ CAPABILITIES = Capabilities(
     modifier_captions={"ctrl": "Ctrl", "shift": "Shift", "alt": "Alt",
                        "option": "Alt", "win": "Win", "cmd": "Win"},
     tray_icon_is_template=False,
+    # Windows has two theme settings and Qt's colorScheme reports the *app*
+    # one, so a user running a dark taskbar with light apps who picks System
+    # correctly gets a light Cadent. Without this line that reads as a bug.
+    theme_subtitle="Follows your Windows app colour mode",
+    high_contrast_reason=("Windows is using a contrast theme, so Cadent is "
+                          "following your system colours"),
 )
 
 

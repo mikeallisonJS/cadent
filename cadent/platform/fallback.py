@@ -169,6 +169,9 @@ CAPABILITIES = Capabilities(
     modifier_captions={"ctrl": "Ctrl", "shift": "Shift", "alt": "Alt",
                        "option": "Alt", "win": "Win", "cmd": "Win"},
     tray_icon_is_template=False,
+    theme_subtitle="Follows your Windows app colour mode",
+    high_contrast_reason=("Windows is using a contrast theme, so Cadent is "
+                          "following your system colours"),
 )
 
 

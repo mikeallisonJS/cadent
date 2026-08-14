@@ -19,13 +19,10 @@ from .widgets import CappedCombo, Notice, caps, card, label, page_title, row
 
 THEME_CHOICES = (("system", "Follow system"), ("light", "Light"), ("dark", "Dark"))
 
-# Windows has two theme settings and Qt's colorScheme reports the *app* one,
-# so a user running a dark taskbar with light apps who picks System correctly
-# gets a light Cadent. Without this line that reads as a bug.
-THEME_SUBTITLE = "Follows your Windows app colour mode"
-
-HIGH_CONTRAST_REASON = ("Windows is using a contrast theme, so Cadent is "
-                        "following your system colours")
+# The two lines below name an OS setting, so they are platform facts read from
+# Capabilities (`theme_subtitle`, `high_contrast_reason`) rather than constants
+# here: Windows has an app colour mode and a contrast theme, macOS has one
+# Appearance control and Increase contrast.
 
 
 class GeneralPane(QWidget):
@@ -34,6 +31,7 @@ class GeneralPane(QWidget):
         self.ctx = ctx
         self.setObjectName("Pane")
         t = ctx.tokens
+        self._caps = platform.current().capabilities
         layout = QVBoxLayout(self)
         layout.setContentsMargins(int(t["sp_6"]), int(t["sp_5"]),
                                   int(t["sp_6"]), int(t["sp_5"]))
@@ -99,19 +97,19 @@ class GeneralPane(QWidget):
         layout.addSpacing(int(t["sp_2"]))
         layout.addWidget(caps("Basics", t))
         layout.addWidget(card([
-            row(t, platform.current().capabilities.autostart_label, self.autostart,
+            row(t, self._caps.autostart_label, self.autostart,
                 desc="Run Cadent when you sign in"),
             row(t, "Microphone", self.mic,
                 desc="Which input device dictation records from",
                 hint=settings.restart_hint("input_device")),
             row(t, "Say something to check it", self.level,
                 desc="The bars follow your voice"),
-            row(t, "Theme", self.theme, desc=THEME_SUBTITLE),
+            row(t, "Theme", self.theme, desc=self._caps.theme_subtitle),
         ]))
         # Carried *visibly* as well as as accessibleDescription: the control
         # stays enabled under a contrast theme, and the reason it currently
         # appears to do nothing has to be readable (§1.3).
-        self.contrast_reason = label(HIGH_CONTRAST_REASON, "RowHint")
+        self.contrast_reason = label(self._caps.high_contrast_reason, "RowHint")
         self.contrast_reason.setVisible(False)
         layout.addWidget(self.contrast_reason)
 
@@ -187,9 +185,10 @@ class GeneralPane(QWidget):
         """
         self.theme.setEnabled(True)
         self.contrast_reason.setVisible(active)
+        subtitle, reason = self._caps.theme_subtitle, self._caps.high_contrast_reason
         if active:
-            self.theme.setToolTip(HIGH_CONTRAST_REASON)
-            a11y.describe(self.theme, f"{THEME_SUBTITLE}. {HIGH_CONTRAST_REASON}")
+            self.theme.setToolTip(reason)
+            a11y.describe(self.theme, f"{subtitle}. {reason}")
         else:
             self.theme.setToolTip("")
-            a11y.describe(self.theme, THEME_SUBTITLE)
+            a11y.describe(self.theme, subtitle)

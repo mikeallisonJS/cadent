@@ -96,6 +96,14 @@ class Capabilities:
     # images to the menu bar (darwin): there the mark is a mask and the
     # states are shapes — flow lines, pause bars, the exclamation (#164).
     tray_icon_is_template: bool
+    # What "Follow system" actually follows, named the way the host OS names
+    # it: Windows has two colour-mode settings and Qt reports the *app* one,
+    # while macOS has one Appearance control. Copy that names an OS setting
+    # is a platform fact, not a string constant.
+    theme_subtitle: str
+    # Why the theme control appears inert while a contrast setting is on —
+    # same reason, two OS vocabularies (contrast theme / increased contrast).
+    high_contrast_reason: str
 
 
 class KeyboardOutput(Protocol):
