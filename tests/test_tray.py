@@ -384,7 +384,8 @@ def test_the_app_repaints_the_tray_when_the_taskbar_ink_moves(qt_app, monkeypatc
     """The whole point of painting the mark ourselves: when the taskbar flips
     colour mode the icon has to follow it, or it goes invisible on the surface
     it was drawn for. The watcher calls back off the GUI thread, so the wiring
-    under test is the hop through the bridge signal."""
+    under test is the hop through the bridge signal onto this one."""
+    import threading
     import types
 
     from conftest import make_platform
@@ -411,5 +412,18 @@ def test_the_app_repaints_the_tray_when_the_taskbar_ink_moves(qt_app, monkeypatc
     assert plat.desktop.ink_watcher is not None, "nobody is watching the taskbar"
     before = instance.tray.icon.icon().cacheKey()
     plat.desktop.ink = "#00ff00"
-    plat.desktop.ink_watcher()          # what the watcher thread calls
+
+    # Fired from a worker thread, as `Win32Desktop._watch_ink` fires it — not
+    # from here. Calling it inline would deliver directly and prove nothing
+    # about the hop. `Tray` is not a QObject, so the affinity that makes this
+    # safe is the *bridge's*: PySide6 uses the sender's thread for a plain
+    # callable, which is why the repaint has to be waited for rather than
+    # observed on return.
+    worker = threading.Thread(target=plat.desktop.ink_watcher)
+    worker.start()
+    worker.join()
+    assert instance.tray.icon.icon().cacheKey() == before, \
+        "repainted on the worker thread — the bridge hop was bypassed"
+
+    qt_app.processEvents()
     assert instance.tray.icon.icon().cacheKey() != before

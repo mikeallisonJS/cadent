@@ -244,7 +244,7 @@ At 16px the master scaled down puts the cradle across three rows at half alpha a
 
 **The 16 grid may simplify, not merely pixel-tune.** It does *not* reproduce the master's 0.84 cradle — at that size the difference is under a pixel and shrinking costs more legibility than the clearance buys, so the cradle stays full size on the box centre (ink 3–13) and the state gets the three columns at 13–15. Within them the flow lines taper 3/2/1, the pause bars are two single columns with a single-column gap, and the exclamation is a one-column stroke over a one-pixel dot. Divergence at this grid is the point of having it.
 
-### Deliverables (originally lifted from [`prototype/mark`](https://github.com/mikeallisonJS/cadent/tree/prototype/mark); the geometry and the raster set were redrawn by [ADR 0006](../adr/0006-one-tray-mark-on-both-platforms.md))
+## Deliverables (originally lifted from [`prototype/mark`](https://github.com/mikeallisonJS/cadent/tree/prototype/mark); the geometry and the raster set were redrawn by [ADR 0006](../adr/0006-one-tray-mark-on-both-platforms.md))
 
 - `packaging/icons/mark-{ready,paused,attention}.svg` — 24-unit masters
 - `packaging/icons/mark-{ready,paused,attention}-16.svg` — hand-corrected 16-unit sources
@@ -319,30 +319,32 @@ When setup is unfinished (§6.4):
     …rest, dictation toggles disabled
 ```
 
-- **The disabled status header is what makes a colour-only icon safe.** One click always resolves ready-vs-paused, it names the mode the icon no longer carries, and it is the only surface that can state a **combination** in words — `Paused · speech model failed`.
+- **The disabled status header is what makes a glyph-only icon safe.** One click always resolves ready-vs-paused, it names the mode the icon no longer carries, and it is the only surface that can state a **combination** in words — `Paused · speech model failed`. (This read "colour-only" while the states were colours; [ADR 0006](../adr/0006-one-tray-mark-on-both-platforms.md) made them shapes, and the header's job is unchanged either way.)
 - **Separator-grouped sections keep conditional items from shuffling the action list.** The GPU item is conditional and lives in a section of its own, so Settings and History never move under the cursor when it appears. Since [#110](https://github.com/mikeallisonJS/cadent/issues/110) removed "Run setup wizard" it is the *only* thing in that section, which makes the separator conditional too — **it is hidden and shown with the item it groups**, or the menu every non-NVIDIA user sees renders `History… ⎯ ⎯ Quit`. Folding the item in with Settings and History instead would drop the no-shuffling guarantee, so the section stays.
-- The menu is a `QMenu` — a real widget — **restyled by the app-level QSS and following the app theme** like every other surface, on Fusion. The icon does not follow the theme; the menu does.
+- The menu is a `QMenu` — a real widget — **restyled by the app-level QSS and following the app theme** like every other surface, on Fusion. The icon does not follow the *app* theme, and the menu does — but the icon is not theme-blind either: it takes its ink from the tray surface it sits on, which on Windows is the taskbar's own colour mode and on macOS is whatever the menu bar paints a mask ([ADR 0006](../adr/0006-one-tray-mark-on-both-platforms.md)). Two different settings, deliberately.
 
 ## 3.3 Left-click toggles pause
 
 `activated` is never connected today — left-clicking the icon is inert. Connect it: **left-click flips pause**, making the most reversible state change a single click. **Double-click is the same action, not two.**
 
-**Confirmed by the icon and tooltip alone — no toast.** A tray click happens with your eye already on the icon, so the colour change lands exactly where you are looking; if the icon is in the overflow flyout, that flyout stays open showing it. A toast for something you did while watching it change is noise. (`_on_cleanup_hotkey`'s toast exists precisely because a hotkey press has *no* co-located feedback.) The accidental-click failure — pausing without noticing, then finding the hotkey does nothing — is caught downstream by §4.3's **Paused** pill.
+**Confirmed by the icon and tooltip alone — no toast.** A tray click happens with your eye already on the icon, so the mark changing to the pause bars lands exactly where you are looking; if the icon is in the overflow flyout, that flyout stays open showing it. A toast for something you did while watching it change is noise. (`_on_cleanup_hotkey`'s toast exists precisely because a hotkey press has *no* co-located feedback.) The accidental-click failure — pausing without noticing, then finding the hotkey does nothing — is caught downstream by §4.3's **Paused** pill.
 
-## 3.4 Amber: anything degraded, but offers clear on view
+## 3.4 Needs attention: anything degraded, but offers clear on view
 
-**Amber fires whenever Cadent is not running at full capability**, which is broader than "broken": the speech model failed to load, flow-mode cleanup failed, the engine crashed and is rebuilding on CPU, setup is unfinished (§6.4), **a pending GPU-pack offer**, and **an unreadable `config.json`** (§7.2).
+> This section said **amber** throughout while the state was a colour. [ADR 0006](../adr/0006-one-tray-mark-on-both-platforms.md) made it the exclamation mark instead; everything below is about *when the state fires and when it clears*, which the change did not touch.
 
-Surfacing the GPU offer beyond a single toast is deliberate — `_offer_gpu_pack` relies today on one 10-second toast plus a menu item the user has no reason to look for. But that breadth creates a live trap: the menu item, once shown, stays visible forever and the eligibility check re-runs every launch, so an NVIDIA user who never installs the pack would sit **permanently amber**, which trains them to ignore the colour. The clearing rule therefore splits by kind:
+**Needs attention fires whenever Cadent is not running at full capability**, which is broader than "broken": the speech model failed to load, flow-mode cleanup failed, the engine crashed and is rebuilding on CPU, setup is unfinished (§6.4), **a pending GPU-pack offer**, and **an unreadable `config.json`** (§7.2).
 
-- **Offers clear on view.** The GPU-pack offer drives amber only until the user has seen it — the colour drops the first time the tray menu is opened after the offer fires. **The menu item remains available forever**; only the colour stops.
-- **Faults clear on fix.** Every other condition holds amber until it actually resolves.
+Surfacing the GPU offer beyond a single toast is deliberate — `_offer_gpu_pack` relies today on one 10-second toast plus a menu item the user has no reason to look for. But that breadth creates a live trap: the menu item, once shown, stays visible forever and the eligibility check re-runs every launch, so an NVIDIA user who never installs the pack would sit **permanently in the attention state**, which trains them to ignore it. The clearing rule therefore splits by kind:
 
-Amber therefore means *"there is something here you have not seen yet, or something is genuinely wrong"*, and can never become permanent scenery.
+- **Offers clear on view.** The GPU-pack offer drives the attention mark only until the user has seen it — it drops the first time the tray menu is opened after the offer fires. **The menu item remains available forever**; only the mark stops.
+- **Faults clear on fix.** Every other condition holds the attention mark until it actually resolves.
+
+The attention state therefore means *"there is something here you have not seen yet, or something is genuinely wrong"*, and can never become permanent scenery.
 
 ## 3.5 Precedence: paused > attention > ready
 
-**Paused outranks amber.** While paused nothing is going to run anyway, so a fault is not yet actionable, and the icon should reflect the state you deliberately chose; amber reappears the instant you resume. The cost — a real problem off the icon until you resume — is absorbed by the status header, which **names both facts**. The colour carries one state; the header carries the combination.
+**Paused outranks attention.** While paused nothing is going to run anyway, so a fault is not yet actionable, and the icon should reflect the state you deliberately chose; the attention mark reappears the instant you resume. The cost — a real problem off the icon until you resume — is absorbed by the status header, which **names both facts**. The mark carries one state; the header carries the combination.
 
 ---
 
@@ -621,7 +623,7 @@ Why it looks like this:
 
 ## 6.4 Cancel, re-run, upgrade
 
-- **Cancel / "Not now"**: the app stays resident in the tray with **dictation disabled**; the tray menu gains a bold **"Finish setup…"** first item (§3.2), and pressing the hotkey pops a toast pointing at it. *Toast, never a prompt.* Unfinished setup also drives **amber** (§3.4).
+- **Cancel / "Not now"**: the app stays resident in the tray with **dictation disabled**; the tray menu gains a bold **"Finish setup…"** first item (§3.2), and pressing the hotkey pops a toast pointing at it. *Toast, never a prompt.* Unfinished setup also drives the **Needs attention** mark (§3.4).
 - **Re-run**: **Settings ▸ General**, where Setup is the first card ([#110](https://github.com/mikeallisonJS/cadent/issues/110)). The tray carried a duplicate of the same button directly under History…, where an accidental click opened a full-screen wizard over whatever you were doing; it is gone. Re-running setup is a rare, deliberate act, and Settings is where deliberate acts live.
 - **Upgrade**: existing users **never** see the wizard — a model already exists. GPU-pack eligibility keeps being handled by the existing tray toast.
 
@@ -657,7 +659,7 @@ This closes a live gap: `Config.load()` keeps only known field names, so today a
 **An unreadable file is never overwritten.** `load()` deliberately leaves a malformed file "untouched for hand-repair" — **and then the next `save()` destroys it anyway.** Today that needs a pause toggle or a settings OK; under instant apply a single stray click does it. Fixed by **refusing to write**:
 
 - Changes apply to the **session only**, never persisted.
-- **Tray amber** (§3.4) carries it with no settings window open — it is a *fault*, so it clears on fix and can't become permanent scenery. This also fixes a second gap: startup on a broken config is **silent** today, so the app runs on nothing the user chose and never says so.
+- **The tray's Needs-attention mark** (§3.4) carries it with no settings window open — it is a *fault*, so it clears on fix and can't become permanent scenery. This also fixes a second gap: startup on a broken config is **silent** today, so the app runs on nothing the user chose and never says so.
 - Settings shows a **persistent inline banner**: *"config.json couldn't be read, so Cadent started with default settings. Changes you make now won't survive a restart."* with **[Open the file]** and **[Back it up and start fresh]**. The rename-aside is the **only** thing allowed to displace the file, and only because the user clicked it. Not a prompt — an inline error state, mirroring §5.4.
 
 *(This is whole-file unreadability. Valid JSON with a bad value goes through `_sanitized()` per-field — §7.5.)*
@@ -676,7 +678,7 @@ The one sharp edge of restart-to-apply is that file and memory can disagree sile
 
 Detection is free — a delta write already reads the file. **It must compare against the raw dict captured at startup, not against current memory**: `_sanitized()` type-corrects in memory and, under delta writes, never writes the correction back, so a memory-vs-file comparison would false-positive forever on any typo'd field.
 
-Surfaced as a **quiet informational line in the affected pane** — *"config.json was edited outside Cadent. `stt_model` there is `large-v3` and will apply next time you start."* **No toast; no tray amber** (amber is reserved for degraded, and a pending edit is not a fault); **no Reload button**, which would drag back everything the watcher was rejected for.
+Surfaced as a **quiet informational line in the affected pane** — *"config.json was edited outside Cadent. `stt_model` there is `large-v3` and will apply next time you start."* **No toast; no Needs-attention mark** (that state is reserved for degraded, and a pending edit is not a fault); **no Reload button**, which would drag back everything the watcher was rejected for.
 
 ## 7.5 A bad value uses the same surface
 
@@ -770,14 +772,14 @@ The seams the decisions actually require, marked accordingly. Organizational pla
 | `cadent/config_store.py` | new | **Load-bearing** (§7.7): `ConfigStore` owns the file; `Config` stays a plain dataclass. |
 | `cadent/hardware.py` | new | psutil + ctypes CUDA probe + the §6.2 table. Probe once, off the UI thread, cached. |
 | `cadent/wizard.py` | new | Six pages, §6. |
-| `cadent/tray.py` | new (extracted) | §3 icon states, status header, grouped menu, left-click pause, amber ledger. |
+| `cadent/tray.py` | new (extracted) | §3 icon states, status header, grouped menu, left-click pause, fault ledger. |
 | `cadent/a11y.py` | new | Focus-visible event filter, Alert helper, `TextScaleFactor` read. |
 | `cadent/settings_ui.py` | rebuilt | Becomes a package: sidebar `QListWidget` + six panes. **Drop the draft/OK model.** |
 | `cadent/settings.py` | changed | **`restarts_needed()` and `ENGINE_FIELDS`-as-diff go away**; invert to a field→engine lookup (§5.2). |
 | `cadent/overlay.py` | rebuilt | §4: `QFrame#overlayPill` + custom-painted indicators, seven states, realize at startup, focused-window screen. |
 | `cadent/config.py` | changed | `theme`, overlay anchor + snap, "show overlay" toggle; `save()`/`load()` duties move to the store. |
 | `cadent/pipeline.py` | changed | **One new signal at the STT→cleanup boundary** (§4.3); hand the `dropped` hotword list to settings (§5.4). |
-| `cadent/app.py` | changed | Icon wiring, clickable toasts (`messageClicked` — none exists today), the two new toasts (§4.2), wizard launch, amber ledger. |
+| `cadent/app.py` | changed | Icon wiring, clickable toasts (`messageClicked` — none exists today), the two new toasts (§4.2), wizard launch, fault ledger. |
 | `packaging/icons/**`, `scripts/build_icons.py` | new (lift from `prototype/mark`) | §2. |
 | `packaging/cadent.spec`, `cadent.iss` | changed | Point at `cadent.ico`. |
 | `pyproject.toml` | changed | `PySide6>=6.8` (§1.2). |
