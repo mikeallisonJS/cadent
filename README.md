@@ -40,23 +40,26 @@ python -m cadent
 
 ### macOS
 
-No installer and no `.app` bundle — a Mac runs it from a source checkout. The
-Xcode Command Line Tools are the one system prerequisite: macOS has no
-`llama-cpp-python` wheel, so cleanup builds from source (~60 s, Metal on by
-default).
+No installer and no `.app` bundle — a Mac runs it from a source checkout, with
+[uv](https://docs.astral.sh/uv/) and the Xcode Command Line Tools as the two
+prerequisites. The CLT are what build `llama-cpp-python`: macOS has no wheel
+for it, so cleanup compiles from source (~60 s, Metal on by default).
 
 ```sh
-xcode-select --install               # only needed for the cleanup extra
+curl -LsSf https://astral.sh/uv/install.sh | sh   # installs to ~/.local/bin
+xcode-select --install                            # only for the cleanup extra
 git clone https://github.com/mikeallisonJS/cadent && cd cadent
 uv sync --extra cleanup --extra dev  # drop "--extra cleanup" to skip the LLM for now
 uv run python -m cadent
 ```
 
 Grant Cadent **Accessibility** (System Settings ▸ Privacy & Security ▸
-Accessibility) — it is the one permission the app cannot work without, since
-both the hotkey tap and text injection go through it. The first-run wizard
-deep-links there and re-checks on its own, and Settings shows a banner until
-the grant lands.
+Accessibility) — it is the grant the app preflights, since both the hotkey tap
+and text injection go through it. The first-run wizard deep-links there and
+re-checks on its own, and Settings shows a banner until it lands. Say yes to
+the **Microphone** prompt too: a denied mic raises no error on macOS, it just
+records zeros, so Cadent recognises an all-silent capture and points you at
+Microphone permission instead of transcribing nothing.
 
 > The `cadent` name is registered on PyPI, but the published release is a
 > placeholder — `pip install cadent` does **not** get you a working app yet.
@@ -66,7 +69,7 @@ First run downloads the faster-whisper model (default `small.en`) and creates co
 
 **Cleanup:** turn on `Clean up transcripts before inserting them` in Settings ▸ Speech & cleanup and pick one of four models — Cadent downloads the one you pick, once. Off by default, and any cleanup failure silently inserts the raw transcript.
 
-**GPU:** on Windows, faster-whisper uses CUDA automatically when an NVIDIA card is available, and cleanup ships on the Vulkan build of `llama-cpp-python`, so it uses any GPU — AMD, Intel or NVIDIA — with no extra install. On macOS, speech runs on the CPU (ctranslate2 ships no Metal backend on arm64, and Parakeet's CoreML provider crashes) while cleanup runs on Metal. Either way the accelerator is proven by real work and drops to the processor when it isn't there; pin it under Settings ▸ Speech & cleanup ▸ Show advanced.
+**GPU:** on Windows, faster-whisper uses CUDA automatically when an NVIDIA card is available, and cleanup ships on the Vulkan build of `llama-cpp-python`, so it uses any GPU — AMD, Intel or NVIDIA — with no extra install. On macOS, speech runs on the CPU (ctranslate2 ships no Metal backend on arm64, and Parakeet's CoreML provider crashes) while cleanup runs on Metal. Either way the accelerator is proven by real work and drops to the processor when it isn't there. Both runtimes are pinnable under Settings ▸ Speech & cleanup ▸ Show advanced — except the speech one on macOS, where `auto` and `cpu` would mean the same thing, so the row isn't offered.
 
 ## Project layout
 
@@ -87,8 +90,9 @@ First run downloads the faster-whisper model (default `small.en`) and creates co
 ## Config quick reference (`config.json` in the data dir above)
 
 - `hotkey`: e.g. `"<ctrl>+<cmd>"` (`<cmd>` is the Win key on Windows, Cmd on macOS), `hotkey_mode`: `"hold"` or `"toggle"`
-- `stt_engine`: `faster-whisper` (default, runs anywhere) | `parakeet` (needs a
-  GPU on Windows; on macOS it runs on the CPU like everything else).
+- `stt_engine`: `faster-whisper` (the default, and the one that runs on any
+  hardware) | `parakeet` (needs a GPU on Windows; on macOS it runs on the CPU
+  like everything else).
   Derived from the model you pick in Settings and written alongside it
 - `stt_model`: for `faster-whisper`, `tiny.en` | `base.en` | `distil-small.en` |
   `small.en` | `distil-medium.en` | `medium.en` | `distil-large-v3` | `large-v3`;
@@ -110,8 +114,9 @@ pytest          # unit tests (vocab, config, history — no audio/GPU needed)
 ruff check .    # lint
 ```
 
-The suite runs on both OSes on every push and PR (`windows-latest` and
-`macos-14`), which is what keeps an OS-specific import from escaping a platform
-adapter. Adapter-internal tests skip themselves on the OS they don't belong to.
+The suite runs on both OSes — `windows-latest` and `macos-14` — for every PR
+and every push to `main`, which is what keeps an OS-specific import from
+escaping a platform adapter. Adapter-internal tests skip themselves on the OS
+they don't belong to.
 
 Build order (matches PRD milestones): get the M0 loop working end-to-end first (`hotkey → record → transcribe → inject`), then overlay/tray/history, then cleanup.
