@@ -242,16 +242,59 @@ def test_the_tray_mark_is_painted_in_the_desktops_ink(qt_app, monkeypatch):
         assert painted == {ink}, f"tray mark not painted in {ink}"
 
 
-def test_the_app_icon_stays_the_brand_colour_even_on_darwin(qt_app, monkeypatch):
-    """Windows, taskbars and installers want the brand mark, not a mask —
-    only the menu bar gets one."""
+def test_the_app_icon_is_the_tile_even_on_darwin(qt_app, monkeypatch):
+    """Windows, taskbars and installers get the tile, not a mask and not the
+    bare silhouette — only the menu bar gets a mask."""
     from conftest import pin_darwin_ui_platform
 
     pin_darwin_ui_platform(monkeypatch)
     icon = icons.app_icon()
     assert icon.isMask() is False
-    img = icon.pixmap(QSize(24, 24), 1.0).toImage()
-    painted = {img.pixelColor(x, y).name()
-               for y in range(img.height()) for x in range(img.width())
-               if img.pixelColor(x, y).alpha() == 255}
-    assert painted == {icons.BRAND_INK}
+    img = icon.pixmap(QSize(128, 128), 1.0).toImage()
+
+    # A rounded square: the corner is outside it, the centre is inside.
+    assert img.pixelColor(1, 1).alpha() < 128, "the tile has no rounded corner"
+    assert img.pixelColor(64, 64).alpha() == 255, "the tile is not filled"
+
+    # The gradient runs light at the top-left to dark at the bottom-right, and
+    # the mark is knocked out of it in white.
+    top_left = img.pixelColor(24, 24)
+    bottom_right = img.pixelColor(104, 104)
+    assert top_left.lightness() > bottom_right.lightness(), \
+        "the tile's gradient is flat or running the wrong way"
+    whites = sum(img.pixelColor(x, y).name() == "#ffffff"
+                 for y in range(img.height()) for x in range(img.width()))
+    assert whites > 200, f"the mark is not knocked out of the tile ({whites}px)"
+
+
+def test_the_app_icon_is_the_container_the_installer_ships(qt_app):
+    """One artefact, not a parallel raster set: a running app's taskbar button
+    takes its icon from here, and it has to agree with the Start-menu entry
+    that launched it."""
+    assert set(icons.app_icon().availableSizes()) == {
+        QSize(size, size) for size in icons.SIZES}
+
+
+def test_the_tile_carries_no_copy_of_the_mark(qt_app):
+    """The tile is composited with the mark at build time, never authored
+    holding a copy of it. A second copy of that geometry is the drift ADR 0006
+    exists to undo — and it would be a copy nobody notices going stale,
+    because this file is only opened when the app icon is being changed."""
+    tile = (icons.icons_dir() / "app-tile.svg").read_text(encoding="utf-8")
+    body = "\n".join(line for line in tile.splitlines()
+                     if "<!--" not in line and not line.strip().startswith("-"))
+    assert "<path" not in body and "<circle" not in body, \
+        "app-tile.svg has drawing primitives beyond the tile itself"
+    assert body.count("<rect") == 1, "app-tile.svg draws more than the tile"
+
+
+def test_the_small_entries_trade_tile_margin_for_glyph(qt_app, build_icons):
+    """At a 16px tile a proportional mark gets ten pixels and the mic stops
+    being a mic, so the small sizes give it more of the canvas. Asserted
+    because it is a deliberate discontinuity, not a rounding artefact."""
+    assert build_icons.SMALL_MARK_FILL > build_icons.MARK_FILL
+    small = round(16 * build_icons.SMALL_MARK_FILL)
+    assert small > round(16 * build_icons.MARK_FILL)
+    # ...and the large sizes keep the proportion the design was chosen at.
+    assert build_icons.app_icon(256).width() == 256
+    assert round(256 * build_icons.MARK_FILL) == 160

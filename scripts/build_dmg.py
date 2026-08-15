@@ -58,6 +58,22 @@ def main() -> int:
     run(["ditto", str(APP), str(STAGE / "Cadent.app")])
     os.symlink("/Applications", STAGE / "Applications")
 
+    # The mounted volume carries the mark too, instead of the generic disk
+    # Finder draws otherwise — the same tile the .app inside it wears. Finder
+    # only honours `.VolumeIcon.icns` when the folder it sits in is flagged as
+    # having a custom icon, and `SetFile` is the only tool that sets that bit;
+    # it ships with the Xcode command line tools, which this build already
+    # needs to compile llama-cpp-python. A missing SetFile costs the icon, not
+    # the release.
+    icns = REPO / "packaging" / "icons" / "cadent.icns"
+    if icns.exists():
+        shutil.copy2(icns, STAGE / ".VolumeIcon.icns")
+        if shutil.which("SetFile"):
+            run(["SetFile", "-a", "C", str(STAGE)])
+        else:
+            print("note: SetFile not found — the volume ships without its "
+                  "custom icon", flush=True)
+
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     dmg = OUT_DIR / f"Cadent-{args.version}-{ARCH}.dmg"
     dmg.unlink(missing_ok=True)

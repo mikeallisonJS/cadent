@@ -220,7 +220,15 @@ The prototype prints a startup audit — 17 fg/bg pairs × 2 themes, plus every 
 
 # 2. The mark ([#73](https://github.com/mikeallisonJS/cadent/issues/73), [#69](https://github.com/mikeallisonJS/cadent/issues/69))
 
-**One mic-derived mark is Cadent's entire visual identity** — the tray on both platforms, the exe, the installer, and every window's title-bar icon. Splitting identity from function buys nothing and doubles the drawing; it also makes the Alt-Tab entry, the taskbar and the tray agree, where today three of the four are PyInstaller's default.
+**One mic-derived mark is Cadent's entire visual identity** — the tray on both platforms, and, knocked out of a tile, the exe, the installer, the `.app` bundle and every window's title-bar icon. Splitting identity from function buys nothing and doubles the drawing; it also makes the Alt-Tab entry, the taskbar and the tray agree, where today three of the four are PyInstaller's default.
+
+**The tray shows the mark bare; everywhere else shows it on a tile.** Same mark, two jobs. A 2px-stroke silhouette on transparency is right in a tray full of monochrome glyphs and reads as a placeholder at 512px in a Dock full of filled shapes. The tile is a rounded square — `rx 224` on the 1024 master, 21.9%, between Apple's continuous corner and Windows 11's near-square, which is the point of having one tile instead of one per platform — carrying a 135° gradient from `#8f78ff` to `#3f22b5` with the Ready mark knocked out of it in white at **62.5%** of the canvas.
+
+The gradient is the only one in the product. An app icon is conventionally read as a lit surface; nothing else here is, and the tray mark in particular stays flat because the OS picks its ink.
+
+**The tile is composited, never authored holding a copy of the mark.** `app-tile.svg` is the tile alone; `build_icons.py` renders the mark over it. A tile file containing its own copy of the geometry is precisely the parallel-copy drift [ADR 0006](../adr/0006-one-tray-mark-on-both-platforms.md) exists to undo — and the copy nobody would notice going stale, since that file is opened only when the app icon is being changed. A test asserts the tile source draws nothing but the tile.
+
+**Below 32px the tile trades margin for glyph** — `0.80` of the canvas rather than `0.625`. Proportional scaling gives a 16px entry ten pixels for the whole mark and the mic stops being a mic. Every platform's own icon set does this; the discontinuity is invisible because nothing shows 24 and 32 side by side.
 
 > **Superseded in part by [ADR 0006](../adr/0006-one-tray-mark-on-both-platforms.md).** Paused and Needs-attention are no longer recolourings: the three states differ **by shape, on both platforms**, and colour says nothing about state anywhere. The paragraphs below are updated to the mark as it ships; the tray's colour table in §3.1 is kept as the record of what it replaced.
 
@@ -249,8 +257,9 @@ At 16px the master scaled down puts the cradle across three rows at half alpha a
 - `packaging/icons/mark-{ready,paused,attention}.svg` — 24-unit masters
 - `packaging/icons/mark-{ready,paused,attention}-16.svg` — hand-corrected 16-unit sources
 - `packaging/icons/png/mark-<state>-<size>.png` — 18 rasters at **16 / 20 / 24 / 32 / 48 / 256**, **alpha only**: the silhouette is the asset and the ink is a runtime decision (ADR 0006)
-- `packaging/icons/cadent.ico` — multi-size, from the Ready state, rendered a second time with the brand colour substituted for the sources' nominal black
-- `packaging/icons/cadent.icns` — the `.app` bundle's icon, same substitution ([#171](https://github.com/mikeallisonJS/cadent/issues/171))
+- `packaging/icons/app-tile.svg` — the app icon's tile, and nothing else; the mark is composited over it at build time
+- `packaging/icons/cadent.ico` — multi-size, the tile with the Ready mark knocked out in white. Also what `icons.app_icon()` loads at runtime: on Windows a *running* app's taskbar button takes its icon from `setWindowIcon`, not from the exe, so pointing it anywhere else makes the button disagree with the Start-menu entry that launched it
+- `packaging/icons/cadent.icns` — the same tile for the `.app` bundle and the DMG's volume icon ([#171](https://github.com/mikeallisonJS/cadent/issues/171))
 - `scripts/build_icons.py` — regenerates all of it
 
 Loaded via **`QIcon.addFile()`** on the PNG set so Windows picks the exact size it asks for (16 @100% DPI, 20 @125%, 24 @150%, 32 @200%) and **never scales**. This also avoids shipping Qt's SVG image-format plugin — a classic PyInstaller silent failure where the icon works in dev and is blank in the built exe.
