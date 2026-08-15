@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -74,6 +75,27 @@ def write_version(version: str) -> None:
     PYPROJECT.write_text(pattern.sub(f'version = "{version}"', text), encoding="utf-8")
 
 
+def relock() -> None:
+    """Re-resolve `uv.lock` so it records the version just written.
+
+    `pyproject.toml` is the single version source, but the lock keeps its own
+    copy of it in the `cadent` entry. Nothing re-locked after the bump, so the
+    two drifted apart — the lock still said 0.2.0 against a 0.4.0 project — and
+    every `uv sync` regenerated the entry and left a dirty file in the tree.
+    Harmless only until someone adds `--locked` or `--frozen` to a workflow,
+    which would then fail on a clean checkout.
+
+    `uv lock` re-resolves but keeps every version it can, so on a bump this
+    rewrites that one field and nothing else.
+    """
+    if shutil.which("uv") is None:
+        # Loud, not skipped: a release that quietly leaves the lock behind is
+        # exactly how the drift accumulated in the first place.
+        raise SystemExit("uv is not on PATH, so uv.lock cannot be re-locked "
+                         "after the version bump")
+    subprocess.run(["uv", "lock"], cwd=REPO, check=True)
+
+
 def changelog_section(version: str) -> str:
     text = CHANGELOG.read_text(encoding="utf-8")
     match = re.search(
@@ -98,6 +120,7 @@ def cmd_prepare() -> None:
         raise SystemExit("no pending fragments in changelog.d/")
     version = next_version(current_version(), set(fragments.values()))
     write_version(version)
+    relock()
     for path, kind in fragments.items():
         if kind in HIDDEN_TYPES:
             path.unlink()

@@ -60,6 +60,71 @@ wheels = [
 ]
 
 [[package]]
+name = "cadent"
+version = "0.4.0"
+source = { editable = "." }
+dependencies = [
+    { name = "faster-whisper" },
+    { name = "jellyfish" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "onnx-asr" },
+    { name = "onnxruntime-directml", marker = "sys_platform == 'win32'" },
+    { name = "platformdirs" },
+    { name = "psutil" },
+    { name = "pynput" },
+    { name = "pyobjc-framework-applicationservices", marker = "sys_platform == 'darwin'" },
+    { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'" },
+    { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'" },
+    { name = "pyperclip" },
+    { name = "pyside6" },
+    { name = "pywin32", marker = "sys_platform == 'win32'" },
+    { name = "rapidfuzz" },
+    { name = "sounddevice" },
+]
+
+[package.optional-dependencies]
+build = [
+    { name = "pyinstaller" },
+]
+cleanup = [
+    { name = "llama-cpp-python", version = "0.3.34", source = { registry = "https://abetlen.github.io/llama-cpp-python/whl/vulkan" }, marker = "sys_platform == 'win32'" },
+    { name = "llama-cpp-python", version = "0.3.34", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
+]
+dev = [
+    { name = "pytest" },
+    { name = "ruff" },
+    { name = "towncrier" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "faster-whisper", specifier = ">=1.1" },
+    { name = "jellyfish", specifier = ">=1.2.1" },
+    { name = "llama-cpp-python", marker = "sys_platform == 'win32' and extra == 'cleanup'", specifier = ">=0.3", index = "https://abetlen.github.io/llama-cpp-python/whl/vulkan" },
+    { name = "llama-cpp-python", marker = "sys_platform != 'win32' and extra == 'cleanup'", specifier = ">=0.3" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "onnx-asr", specifier = ">=0.12" },
+    { name = "onnxruntime-directml", marker = "sys_platform == 'win32'", specifier = ">=1.24" },
+    { name = "platformdirs", specifier = ">=4.0" },
+    { name = "psutil", specifier = ">=5.9" },
+    { name = "pyinstaller", marker = "extra == 'build'", specifier = ">=6.21" },
+    { name = "pynput", specifier = ">=1.8.2" },
+    { name = "pyobjc-framework-applicationservices", marker = "sys_platform == 'darwin'", specifier = ">=10" },
+    { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'", specifier = ">=10" },
+    { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'", specifier = ">=10" },
+    { name = "pyperclip", specifier = ">=1.9" },
+    { name = "pyside6", specifier = ">=6.8" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=306" },
+    { name = "rapidfuzz", specifier = ">=3.14.5" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
+    { name = "sounddevice", specifier = ">=0.5" },
+    { name = "towncrier", marker = "extra == 'dev'", specifier = ">=24.8" },
+]
+provides-extras = ["cleanup", "dev", "build"]
+
+[[package]]
 name = "certifi"
 version = "2026.7.22"
 source = { registry = "https://pypi.org/simple" }
@@ -484,71 +549,6 @@ dependencies = [
     { name = "typing-extensions", marker = "sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c1/2f/46487e949da42b31847853793ddbfd44c7414e94d4364c9a41f91f30af27/llama_cpp_python-0.3.34.tar.gz", hash = "sha256:d849d286d808284f1d3ec1bd6875572430d29d1f9574a010232caa4e9cef0e35", size = 71617302, upload-time = "2026-07-12T04:33:41.928Z" }
-
-[[package]]
-name = "cadent"
-version = "0.2.0"
-source = { editable = "." }
-dependencies = [
-    { name = "faster-whisper" },
-    { name = "jellyfish" },
-    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "onnx-asr" },
-    { name = "onnxruntime-directml", marker = "sys_platform == 'win32'" },
-    { name = "platformdirs" },
-    { name = "psutil" },
-    { name = "pynput" },
-    { name = "pyobjc-framework-applicationservices", marker = "sys_platform == 'darwin'" },
-    { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'" },
-    { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'" },
-    { name = "pyperclip" },
-    { name = "pyside6" },
-    { name = "pywin32", marker = "sys_platform == 'win32'" },
-    { name = "rapidfuzz" },
-    { name = "sounddevice" },
-]
-
-[package.optional-dependencies]
-build = [
-    { name = "pyinstaller" },
-]
-cleanup = [
-    { name = "llama-cpp-python", version = "0.3.34", source = { registry = "https://abetlen.github.io/llama-cpp-python/whl/vulkan" }, marker = "sys_platform == 'win32'" },
-    { name = "llama-cpp-python", version = "0.3.34", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'win32'" },
-]
-dev = [
-    { name = "pytest" },
-    { name = "ruff" },
-    { name = "towncrier" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "faster-whisper", specifier = ">=1.1" },
-    { name = "jellyfish", specifier = ">=1.2.1" },
-    { name = "llama-cpp-python", marker = "sys_platform == 'win32' and extra == 'cleanup'", specifier = ">=0.3", index = "https://abetlen.github.io/llama-cpp-python/whl/vulkan" },
-    { name = "llama-cpp-python", marker = "sys_platform != 'win32' and extra == 'cleanup'", specifier = ">=0.3" },
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "onnx-asr", specifier = ">=0.12" },
-    { name = "onnxruntime-directml", marker = "sys_platform == 'win32'", specifier = ">=1.24" },
-    { name = "platformdirs", specifier = ">=4.0" },
-    { name = "psutil", specifier = ">=5.9" },
-    { name = "pyinstaller", marker = "extra == 'build'", specifier = ">=6.21" },
-    { name = "pynput", specifier = ">=1.8.2" },
-    { name = "pyobjc-framework-applicationservices", marker = "sys_platform == 'darwin'", specifier = ">=10" },
-    { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'", specifier = ">=10" },
-    { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'", specifier = ">=10" },
-    { name = "pyperclip", specifier = ">=1.9" },
-    { name = "pyside6", specifier = ">=6.8" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=306" },
-    { name = "rapidfuzz", specifier = ">=3.14.5" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
-    { name = "sounddevice", specifier = ">=0.5" },
-    { name = "towncrier", marker = "extra == 'dev'", specifier = ">=24.8" },
-]
-provides-extras = ["cleanup", "dev", "build"]
 
 [[package]]
 name = "macholib"
