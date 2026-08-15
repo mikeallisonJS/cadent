@@ -5,6 +5,23 @@ and are rendered here by the release PR — see `docs/agents/releases.md`.
 
 <!-- towncrier release notes start -->
 
+## v0.5.0 — 2026-08-15
+
+### Features
+
+- Cadent's tray icon is now the same mark on Windows and macOS — previously each
+  platform drew a different one. The three states are told apart by shape rather
+  than colour everywhere: flow lines when dictation is ready, two bars when it is
+  paused, an exclamation when something needs you. On Windows the icon follows
+  your taskbar's light or dark setting, and switches with it while the app is
+  running, so it stays visible whichever you use. ([#7](https://github.com/mikeallisonJS/cadent/issues/7))
+- Cadent has a proper app icon: the mark knocked out of a rounded purple tile,
+  on the installer, the Start menu, the taskbar, the Alt-Tab entry, the macOS app
+  bundle and the disk image the Mac version arrives in. Previously those all
+  carried the bare tray glyph, which looked unfinished at the sizes Finder and
+  the Start menu use. The tray icon itself is unchanged. ([#10](https://github.com/mikeallisonJS/cadent/issues/10))
+
+
 ## v0.4.0 — 2026-08-14
 
 ### Features
