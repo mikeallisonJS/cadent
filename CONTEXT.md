@@ -131,12 +131,20 @@ app id, a portal grant as the permission preflight. **Reduced** (GNOME
 Wayland, run natively — never forced under XWayland) is the same paste-first
 portal ladder — the Clipboard portal rides the RemoteDesktop session that
 already types — with no overlay and no per-app overrides (ADR 0007). Tiers carry the promises; distros never do. Raw evdev/uinput input
-is an opt-in *mode* that overlays a Wayland tier, not a tier of its own.
+would be an opt-in *mode* overlaying a Wayland tier rather than a tier of its
+own — v1 does not ship it at all, and never as a silent fallback (ADR 0008).
+A tier's name is not a promise its bus can keep: where the desktop places a
+session in a tier whose portal is missing, the affected rung is dropped for
+that run and the copy says so — never a fourth tier.
 _Avoid_: compatibility level, X11 mode / Wayland mode, degraded mode
 
 **Permission preflight**:
 The one OS grant Cadent cannot work without — Accessibility on darwin,
-none on Windows (`Capabilities.permission_preflight`). Surfaced twice since
+none on Windows, the portal grant on Linux's Wayland tiers
+(`Capabilities.permission_preflight`). One value even where the OS asks
+twice: on Linux `"portal"` covers both the shortcut binding and the input
+session, because holding one without the other is a dead loop, not a
+half-working app (ADR 0008). Surfaced twice since
 #148, never as a prompt: a darwin-only wizard step that deep-links and
 re-checks on its own, and a persistent Settings banner that clears itself the
 moment the grant lands. Neither gates anything — the wizard's Next stays
