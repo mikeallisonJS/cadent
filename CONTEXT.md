@@ -130,11 +130,14 @@ _Avoid_: TCC nag, permission dialog, onboarding gate
 
 **App picker**:
 The overrides pane's add affordance where `Capabilities.app_picker` is true
-(darwin, #148): the running regular-activation-policy apps, rendered
-"Display Name — bundle.id" and storing the id — nobody knows their
-terminal's bundle identifier, and a mistyped one is a silent no-op forever.
-Free text stays accepted; override and history rows render display names by
-live lookup against what is running, raw identity otherwise.
+(darwin, #148; Linux, #21): the apps a user could target, rendered
+"Display Name — identity" and storing the identity — nobody knows their
+terminal's bundle identifier or desktop-file id, and a mistyped one is a
+silent no-op forever. Darwin lists the running regular-activation-policy
+apps; Linux lists the *installed* applications (their `.desktop` files),
+which every support tier can read. Free text stays accepted; override and
+history rows render display names — by live lookup against what is running
+on darwin, by desktop-file name on Linux — raw identity otherwise.
 _Avoid_: app dropdown, bundle browser
 
 **GPU support pack**:
