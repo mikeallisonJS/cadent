@@ -119,6 +119,21 @@ the partial, so a cancelled download starts over — which is why Escape goes
 inert on the wizard's model page while one is running.
 _Avoid_: aborted, interrupted, errored
 
+**Support tier**:
+Which promise Cadent makes about the core loop on Linux, decided once at
+startup from the session type and desktop and carried as a platform fact — one
+build, three tiers. **Whole** (X11 on any desktop) is Windows parity: the
+shipped chord, type-first with paste fallback, auto-learn, overlay, per-app
+overrides, no permission. **Portal** (Wayland on Plasma, wlroots, SteamOS
+desktop) is the loop intact but portal-shaped: a keysym-bearing default chord,
+paste-first with no auto-learn, overlay via layer-shell, overrides keyed on
+app id, a portal grant as the permission preflight. **Reduced** (GNOME
+Wayland, run natively — never forced under XWayland) is hotkey, record,
+transcribe and portal typing only: no clipboard rung, no overlay, no per-app
+overrides. Tiers carry the promises; distros never do. Raw evdev/uinput input
+is an opt-in *mode* that overlays a Wayland tier, not a tier of its own.
+_Avoid_: compatibility level, X11 mode / Wayland mode, degraded mode
+
 **Permission preflight**:
 The one OS grant Cadent cannot work without — Accessibility on darwin,
 none on Windows (`Capabilities.permission_preflight`). Surfaced twice since
