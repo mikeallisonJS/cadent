@@ -138,9 +138,13 @@ live lookup against what is running, raw identity otherwise.
 _Avoid_: app dropdown, bundle browser
 
 **GPU support pack**:
-The two cuBLAS DLLs (`cublas64_12.dll`, `cublasLt64_12.dll`) that let the
-CPU-safe build use CUDA, downloaded once — disclosed, user-initiated from the
-tray, never silent — into `%LOCALAPPDATA%\Cadent\cuda`, which is prepended
-to `PATH` at startup. Offered only when an NVIDIA driver is present but the
-speech engine fell back to CPU. Deleting the directory reverts to CPU.
+The CUDA runtime libraries the *current speech engine* needs to reach the
+GPU, downloaded once — disclosed, user-initiated from the tray, never
+silent — into the app's data dir. One surface everywhere it exists; what it
+fetches is an **edition** keyed by engine: on Windows the two cuBLAS DLLs
+(`cublas64_12.dll`, `cublasLt64_12.dll`) for faster-whisper, prepended to
+`PATH`; on Linux the same cuBLAS pair for faster-whisper *and* the CUDA-13
+stack for Parakeet, preloaded at startup (ADR 0010). Offered only when an
+NVIDIA driver that can use it is present but the speech engine fell back to
+CPU. Deleting the directory reverts to CPU.
 _Avoid_: CUDA runtime install, GPU flavor
