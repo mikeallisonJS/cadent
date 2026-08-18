@@ -430,3 +430,46 @@ def test_the_clipboard_thread_reports_a_missing_display_instead_of_hanging():
     with pytest.raises(RuntimeError):
         clip.get_text()
     time.sleep(0)   # the thread ends on its own
+
+
+# ---- the overrides pane on Linux (#37, spec §5.2) ---------------------------
+
+def test_the_linux_picker_lists_installed_apps_and_stores_the_desktop_id(
+        qt_app, tmp_path, monkeypatch):
+    import dataclasses
+
+    from conftest import FakeFocusedApp
+
+    from cadent import platform as platform_pkg
+    from cadent.config_store import ConfigStore
+    from cadent.platform import linux
+    from cadent.settings_ui import SettingsWindow
+    from cadent.theme.tokens import tokens
+
+    for session, desktop in (("x11", "KDE"), ("wayland", "KDE"), ("wayland", "GNOME")):
+        caps = linux.capabilities_for(linux.detect(
+            {"XDG_SESSION_TYPE": session, "XDG_CURRENT_DESKTOP": desktop}))
+        plat = make_platform(focused_app=FakeFocusedApp(
+            name="org.kde.konsole",
+            running=[("Firefox", "org.mozilla.firefox"), ("Konsole", "org.kde.konsole")],
+            names={"org.mozilla.firefox": "Firefox"}))
+        monkeypatch.setattr(platform_pkg, "_current",
+                            dataclasses.replace(plat, capabilities=caps))
+        win = SettingsWindow(ConfigStore(tmp_path / f"{session}-{desktop}.json"),
+                             tokens=tokens("dark"), devices=[])
+        try:
+            combo = win.overrides.add_combo
+            rows = [(combo.itemText(i), combo.itemData(i)) for i in range(combo.count())]
+            assert ("Firefox — org.mozilla.firefox", "org.mozilla.firefox") in rows
+            assert combo.lineEdit().placeholderText() == "org.mozilla.firefox" or \
+                "org.mozilla.firefox" in combo.lineEdit().placeholderText()
+            combo.setCurrentIndex(combo.findData("org.mozilla.firefox"))
+            win.overrides._add()
+            assert any(o.process == "org.mozilla.firefox" for o in win.overrides.overrides)
+            # The row renders the .desktop Name whether or not the app runs.
+            texts = [win.overrides.table.item(r, 0).text()
+                     for r in range(win.overrides.table.rowCount())]
+            assert any("Firefox" in t for t in texts)
+            assert win.overrides.table.isEnabled()
+        finally:
+            win.close()

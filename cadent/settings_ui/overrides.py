@@ -455,11 +455,13 @@ class OverridesPane(QWidget):
         matches is a silent no-op forever. Degrades cleanly to
         running-processes-only when history is off or pruned.
 
-        Where `app_picker` is set (darwin, §5.2), the list is instead the
-        running regular-activation-policy apps, rendered
-        "Display Name — bundle.id" and storing the id — nobody knows their
-        terminal's bundle identifier, and a mistyped one is the same silent
-        no-op forever. Free text stays accepted either way.
+        Where `app_picker` is set (darwin §5.2, Linux ADR 0009), the list is
+        instead the platform's targetable apps — the running
+        regular-activation-policy apps on macOS, the installed `.desktop`
+        applications on Linux — rendered "Display Name — identity" and
+        storing the identity: nobody knows their terminal's bundle identifier
+        or desktop-file id, and a mistyped one is the same silent no-op
+        forever. Free text stays accepted either way.
         """
         if platform.current().capabilities.app_picker:
             # Re-listed every time the pane comes back on screen (showEvent):

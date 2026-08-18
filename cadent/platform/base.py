@@ -204,14 +204,19 @@ class FocusedApp(Protocol):
         ...
 
     def running_apps(self) -> list[tuple[str, str]]:
-        """(display name, identity) of the running apps a user could target —
-        regular-activation-policy apps on macOS (§5.2). Empty where the
-        overrides pane lists process names instead (`app_picker` False)."""
+        """(display name, identity) of the apps a user could target — the
+        running regular-activation-policy apps on macOS (§5.2), the
+        *installed* applications (`.desktop` files, ADR 0009) on Linux, where
+        every tier can read them and nobody knows a desktop-file id by heart.
+        Empty where the overrides pane lists process names instead
+        (`app_picker` False)."""
         ...
 
     def display_name(self, identity: str) -> str | None:
-        """The human name behind a stored identity, resolved against what is
-        running right now, or None — rows render the raw identity then."""
+        """The human name behind a stored identity — resolved against what is
+        running right now on macOS, against the installed `.desktop` entries
+        on Linux (a closed app's history row still reads "Firefox") — or
+        None, and rows render the raw identity."""
         ...
 
 
