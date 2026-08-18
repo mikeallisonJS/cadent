@@ -1,0 +1,65 @@
+# Maintainer: Mike Allison <dj.mikeallison@gmail.com>
+#
+# cadent-bin (M6 §8.1, ADR 0011): repacks the released tarball — the same
+# frozen onedir the AppImage carries — under /opt, and is *authoritative* for
+# the desktop entry and icons: Cadent's own first-run writer skips them
+# whenever a system-wide entry exists. Hand-published from the repo; a
+# release bumps pkgver and sha256sums.
+#
+# Host requirements mirror the bundle's deliberate exclusions (§8.5):
+# libasound.so.2 is never bundled (alsa-lib must be the host's, or PipeWire
+# routing breaks silently), so alsa-lib is a hard dependency and pipewire-alsa
+# the optional one that makes the `default` PCM reach PipeWire.
+
+pkgname=cadent-bin
+_pkgname=cadent
+pkgver=0.0.0
+pkgrel=1
+pkgdesc="Fully-local push-to-talk dictation: transcribe, clean up, insert at the cursor"
+arch=('x86_64')
+url="https://github.com/mikeallisonJS/cadent"
+license=('MIT')
+depends=('alsa-lib' 'glibc>=2.39' 'libxkbcommon' 'fontconfig' 'glib2' 'libglvnd'
+         'dbus' 'xdg-utils' 'hicolor-icon-theme')
+optdepends=('pipewire-alsa: route the microphone through PipeWire'
+            'vulkan-icd-loader: run cleanup on the GPU (Vulkan)'
+            'xdg-desktop-portal: hotkey and typing on Wayland sessions'
+            'xdg-desktop-portal-kde: the Plasma portal backend'
+            'xdg-desktop-portal-gnome: the GNOME portal backend'
+            'xdg-desktop-portal-hyprland: the Hyprland portal backend'
+            'libappindicator-gtk3: a tray icon on GNOME (with the AppIndicator extension)')
+provides=('cadent')
+conflicts=('cadent')
+options=('!strip')
+source=("${url}/releases/download/v${pkgver}/${_pkgname}-${pkgver}-x86_64.tar.zst")
+sha256sums=('SKIP')
+
+package() {
+    install -dm755 "${pkgdir}/opt/${_pkgname}"
+    cp -a "${srcdir}/${_pkgname}/." "${pkgdir}/opt/${_pkgname}/"
+
+    install -dm755 "${pkgdir}/usr/bin"
+    ln -s "/opt/${_pkgname}/Cadent" "${pkgdir}/usr/bin/cadent"
+
+    # The desktop entry — the AUR package owns it, so the app never writes
+    # its own into ~/.local/share/applications on this machine.
+    install -Dm644 /dev/stdin "${pkgdir}/usr/share/applications/com.mikeallisonjs.cadent.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=Cadent
+GenericName=Dictation
+Comment=Push-to-talk dictation that types where you are
+Exec=/opt/cadent/Cadent
+TryExec=/opt/cadent/Cadent
+Icon=com.mikeallisonjs.cadent
+Terminal=false
+Categories=Utility;Accessibility;
+StartupWMClass=com.mikeallisonjs.cadent
+Keywords=dictation;speech;voice;typing;
+DESKTOP
+
+    for size in 48 128 256; do
+        install -Dm644 "${srcdir}/${_pkgname}/_internal/icons/png/app-${size}.png" \
+            "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps/com.mikeallisonjs.cadent.png"
+    done
+}

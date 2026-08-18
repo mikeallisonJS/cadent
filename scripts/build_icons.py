@@ -199,6 +199,12 @@ def main() -> None:
     ico = ICONS / "cadent.ico"
     write_ico([app_icon(size) for size in SIZES], ico)
 
+    # The Linux hicolor tiles (M6 §8.3): the app writes these into
+    # ~/.local/share/icons/hicolor/<size>x<size>/apps/ on first run, so the
+    # desktop entry has an icon at the sizes launchers ask for.
+    for size in icons.HICOLOR_SIZES:
+        app_icon(size).save(str(icons.tile_png_path(size)), "PNG")
+
     # The .app icon (#171). Its own size ladder: the Dock and Finder ask up to
     # 1024, four sizes past anything the tray or the .ico needs, and none of
     # them belong in the runtime PNG set.

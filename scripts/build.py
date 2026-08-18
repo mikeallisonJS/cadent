@@ -2,10 +2,12 @@
 
 Usage: python scripts/build.py [--skip-sync]
 
-Produces dist/Cadent/ on Windows and dist/Cadent.app on macOS (#171), per
-packaging/cadent.spec, then verifies the load-bearing files the M3 packaging
-research (#40) identified are present — a build that passes here can still
-fail at runtime, so follow with scripts/smoke_frozen.py.
+Produces dist/Cadent/ on Windows and Linux and dist/Cadent.app on macOS
+(#171), per packaging/cadent.spec, then verifies the load-bearing files the
+M3 packaging research (#40) identified are present (and, on Linux, that the
+excluded-on-purpose ones are absent — M6 §8.5) — a build that passes here can
+still fail at runtime, so follow with scripts/smoke_frozen.py. On Linux,
+scripts/build_linux.py then wraps the onedir into the tarball and AppImage.
 """
 
 from __future__ import annotations
@@ -66,6 +68,38 @@ LOAD_BEARING = {
         "*/platforms/libqcocoa.dylib",                 # Qt can't start without
         "*/_sounddevice_data/portaudio-binaries/libportaudio*.dylib",
     ],
+    # The Linux onedir (M6 §8.5, ADR 0011): eleven rows, glob patterns against
+    # the dist/Cadent/ tree scripts/build_linux.py tars and wraps.
+    "linux": [
+        "Cadent",
+        "*/libctranslate2*.so*",                       # custom hook: STT engine
+        "*/llama_cpp/lib/libllama.so",                 # custom hook: ctypes-loaded
+        # The Vulkan backend of the same wheel — the ggml-vulkan.dll story
+        # again: lost, cleanup runs on the CPU ~20x slower and says nothing.
+        "*/llama_cpp/lib/libggml-vulkan.so",
+        "*/faster_whisper/assets/silero_vad_v6.onnx",  # vad_filter=True
+        "*/onnx_asr/preprocessors/data/nemo128.onnx",
+        # The GPU wheel's CUDA provider, not the CPU wheel: same
+        # libonnxruntime.so either way, so a build that picked the CPU one up
+        # looks complete and leaves Parakeet nowhere to run but the CPU.
+        "*/onnxruntime/capi/libonnxruntime_providers_cuda.so",
+        # Either platform plugin missing is a dead session type; without the
+        # xdg-shell integration Qt connects to Wayland and shows no window.
+        "*/platforms/libqxcb.so",
+        "*/platforms/libqwayland-generic.so",
+        "*/wayland-shell-integration/libxdg-shell.so",
+        "*/libportaudio.so*",                          # staged by build_linux.py
+    ],
+}
+
+# Excluded on purpose (M6 §8.5) — recorded beside LOAD_BEARING so a refactor
+# cannot re-add it: alsa-lib dlopens host plugins (`pcm_pipewire` among them)
+# against the host's own config, so a *bundled* libasound.so.2 breaks audio
+# routing silently. The host's libasound2 is a requirement, not a payload.
+# libjack.so.0 rides along instead — inert without a JACK server, and
+# excluding it makes libportaudio fail to load.
+EXCLUDED_ON_PURPOSE = {
+    "linux": ["*/libasound.so*"],
 }
 
 
@@ -91,6 +125,19 @@ def collected(root: Path) -> dict[str, int]:
     return files
 
 
+def check_tree(files, platform: str) -> list[str]:
+    """The load-bearing rows that are missing and the excluded-on-purpose
+    files that crept in, as human lines; empty means the tree is right."""
+    key = "linux" if platform.startswith("linux") else platform
+    problems = [f"missing load-bearing file: {pattern}"
+                for pattern in LOAD_BEARING.get(key, [])
+                if not any(fnmatch(rel, pattern) for rel in files)]
+    problems += [f"bundled a file excluded on purpose: {rel} (matches {pattern})"
+                 for pattern in EXCLUDED_ON_PURPOSE.get(key, [])
+                 for rel in files if fnmatch(rel, pattern)]
+    return problems
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-sync", action="store_true",
@@ -112,12 +159,11 @@ def main() -> int:
         return 1
 
     files = collected(DIST)
-    missing = [pattern for pattern in LOAD_BEARING.get(sys.platform, [])
-               if not any(fnmatch(rel, pattern) for rel in files)]
-    if missing:
-        print("BUILD INCOMPLETE — missing load-bearing files:", file=sys.stderr)
-        for pattern in missing:
-            print(f"  {pattern}", file=sys.stderr)
+    problems = check_tree(files, sys.platform)
+    if problems:
+        print("BUILD INCOMPLETE:", file=sys.stderr)
+        for line in problems:
+            print(f"  {line}", file=sys.stderr)
         return 1
 
     total = sum(files.values())

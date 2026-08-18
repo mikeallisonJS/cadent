@@ -32,12 +32,14 @@ without one):
 2. A human merges the release PR. That is the release decision.
 3. `tag-release.yml` tags the merge commit `vX.Y.Z`, publishes the GitHub
    Release with the curated changelog section (auto-generated notes collapsed
-   beneath it), and dispatches both platform builds at the tag —
-   `build-installer.yml` (Windows, Inno Setup `.exe`) and
-   `build-installer-macos.yml` (macOS, drag-to-Applications `.dmg`). The tag
-   is the trigger contract: a future platform or store workflow hooks the
-   same tag and attaches to the same release. The two legs are independent,
-   so a failure on one still ships the other.
+   beneath it), and dispatches the platform builds at the tag —
+   `build-installer.yml` (Windows, Inno Setup `.exe`),
+   `build-installer-macos.yml` (macOS, drag-to-Applications `.dmg`) and
+   `build-installer-linux.yml` (Linux, `.tar.zst` + AppImage; the AUR
+   `cadent-bin` PKGBUILD in `packaging/aur/` repacks the tarball by hand).
+   The tag is the trigger contract: a future platform or store workflow hooks
+   the same tag and attaches to the same release. The legs are independent,
+   so a failure on one still ships the others.
 
 The macOS leg has three signing states, and the secrets decide which one a
 release lands on. The workflow header names all six and what each does.

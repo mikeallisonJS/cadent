@@ -245,6 +245,11 @@ def create() -> Platform:
 
     info = detect()
     bus = open_portal_connection()
+    # First run (§8.3): the desktop entry and hicolor tiles, skipped where a
+    # package already provides them.
+    from .desktopentry import ensure_desktop_entry
+
+    ensure_desktop_entry()
     request_permission = None
     if info.tier == WHOLE:
         caps = capabilities_for(info)

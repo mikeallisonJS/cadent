@@ -58,6 +58,15 @@ def ico_path() -> Path:
     return icons_dir() / "cadent.ico"
 
 
+# The tile at the sizes freedesktop launchers ask for (M6 §8.3); written
+# into the user's hicolor theme on first run by the Linux platform.
+HICOLOR_SIZES = (48, 128, 256)
+
+
+def tile_png_path(size: int) -> Path:
+    return icons_dir() / "png" / f"app-{size}.png"
+
+
 def icns_path() -> Path:
     """The .app bundle's icon (#171) — packaging only; nothing loads it at
     runtime, since macOS reads it from the bundle itself."""

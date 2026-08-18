@@ -1,0 +1,86 @@
+# Build the Linux artefacts (M6 §8.2, ADR 0011): PyInstaller onedir via
+# scripts/build.py, then scripts/build_linux.py wraps it into
+# cadent-<version>-x86_64.tar.zst and Cadent-<version>-x86_64.AppImage. The
+# third leg beside build-installer.yml (Windows) and build-installer-macos.yml;
+# no signing, like Windows.
+#
+# ubuntu-24.04 pinned by name (like macos-14): the runner's glibc is the
+# floor the frozen build inherits — 2.39, "Ubuntu 24.04 LTS or newer, any
+# rolling distro". Runs on version-tag push (v*) and by hand.
+# scripts/smoke_frozen.py stays a local step on every leg.
+
+name: build-installer-linux
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # gh release upload on tag builds
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Determine version
+        id: version
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/v*) version="${GITHUB_REF_NAME#v}" ;;
+            *)            version="0.0.0" ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install system libraries
+        # libportaudio2 is staged into the bundle by packaging/cadent.spec
+        # (sounddevice's manylinux wheel ships none); the rest are what
+        # PySide6 and the build link against on the runner. zstd for the
+        # tarball; libfuse2 lets appimagetool's own AppImage run.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libportaudio2 libegl1 libgl1 libxkbcommon0 \
+            libdbus-1-3 libfontconfig1 libglib2.0-0 zstd libfuse2 file
+
+      - name: Install dependencies
+        # all-extras: the cleanup extra resolves to the Vulkan manylinux
+        # wheel (ADR 0010) and build brings PyInstaller.
+        run: uv sync --all-extras
+
+      - name: Build frozen app (PyInstaller onedir)
+        env:
+          CADENT_VERSION: ${{ steps.version.outputs.version }}
+        run: uv run python scripts/build.py --skip-sync
+
+      - name: Fetch appimagetool
+        run: |
+          curl -fsSL -o appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+
+      - name: Build the tarball and AppImage
+        run: |
+          uv run python scripts/build_linux.py \
+            --version ${{ steps.version.outputs.version }} \
+            --appimagetool "$PWD/appimagetool"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cadent-${{ steps.version.outputs.version }}-linux-x86_64
+          path: |
+            dist/installer/*.AppImage
+            dist/installer/*.tar.zst
+          if-no-files-found: error
+
+      - name: Attach the artefacts to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --generate-notes || echo "release exists"
+          gh release upload "$GITHUB_REF_NAME" dist/installer/*.AppImage \
+            dist/installer/*.tar.zst --clobber

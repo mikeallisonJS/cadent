@@ -37,6 +37,10 @@ from .stt import make_engine
 from .theme.manager import ThemeManager
 from .tray import Tray
 
+# The freedesktop app id (M6 §8.3); equal to the LaunchAgent label on darwin
+# and the Linux `.desktop` basename — one identity per platform file.
+APP_DESKTOP_ID = "com.mikeallisonjs.cadent"
+
 log = logging.getLogger(__name__)
 
 # What a download is called wherever it is reported — the tray header, the
@@ -114,6 +118,10 @@ class CadentApp:
 
         self.qt = QApplication(sys.argv)
         self.qt.setQuitOnLastWindowClosed(False)
+        # The desktop-file name (M6 §8.3): the `.desktop` basename, and the
+        # only thing Qt derives the Wayland `app_id` from — so the entry,
+        # the icon and the window agree. Inert where nothing reads it.
+        self.qt.setDesktopFileName(APP_DESKTOP_ID)
         # One mark for every window, the taskbar and Alt-Tab (#73).
         self.qt.setWindowIcon(icons.app_icon())
         # The design language, before any window exists. Windows' Text size

@@ -58,9 +58,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           V: ${{ steps.version.outputs.version }}
-        # One dispatch per platform leg (#171). Both attach to the release the
-        # step above created, and neither depends on the other, so they run
-        # concurrently and a failure on one still ships the other.
+        # One dispatch per platform leg (#171, M6 ADR 0011). All attach to the release the
+        # step above created, and none depends on another, so they run
+        # concurrently and a failure on one still ships the others.
         run: |
           gh workflow run build-installer.yml --ref "v$V"
           gh workflow run build-installer-macos.yml --ref "v$V"
+          gh workflow run build-installer-linux.yml --ref "v$V"

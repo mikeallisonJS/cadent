@@ -14,6 +14,7 @@ import os
 import sys
 
 IS_DARWIN = sys.platform == "darwin"
+IS_LINUX = sys.platform.startswith("linux")
 
 # The identity macOS files the app under: TCC grants (Accessibility, the
 # microphone), the LaunchAgent, Finder, `open -b`. It must stay equal to
@@ -57,6 +58,25 @@ INFO_PLIST["CFBundleVersion"] = VERSION
 ICON = os.path.join(SPECPATH, "icons",
                     "cadent.icns" if IS_DARWIN else "cadent.ico")
 
+# Linux (M6 §8.5, ADR 0011): sounddevice's manylinux wheel carries no
+# PortAudio, so the distro's libportaudio.so.2 is staged into the bundle
+# (`apt-get install libportaudio2` on the runner). Its ALSA dependency is
+# deliberately *not*: alsa-lib dlopens the host's plugins against the host's
+# config, so a bundled copy breaks routing silently — libasound.so.2 stays a
+# host requirement, and Analysis is stripped of it below. libjack rides along.
+STAGED_BINARIES = []
+if IS_LINUX:
+    import ctypes.util
+
+    _portaudio = ctypes.util.find_library("portaudio")
+    if _portaudio:
+        for candidate in ("/usr/lib/x86_64-linux-gnu/" + _portaudio,
+                          "/usr/lib64/" + _portaudio, "/usr/lib/" + _portaudio):
+            if os.path.exists(candidate):
+                STAGED_BINARIES.append((candidate, "."))
+                break
+EXCLUDED_ON_PURPOSE = ("libasound.so",) if IS_LINUX else ()
+
 # Signing, when there is an identity to sign with. Read from the environment
 # rather than written here: the value names a certificate in the runner's
 # keychain, and only the workflow knows whether one was imported. Unset — the
@@ -75,7 +95,7 @@ a = Analysis(
     # The project is installed editable (uv sync), which modulegraph can't
     # follow — resolve the cadent package from the repo root instead.
     pathex=[os.path.dirname(SPECPATH)],
-    binaries=[],
+    binaries=STAGED_BINARIES,
     # The mark (#73): rasterised PNGs loaded by QIcon.addFile at runtime, so
     # Qt's SVG image-format plugin never has to survive the freeze.
     datas=[(os.path.join(SPECPATH, "icons"), "icons")],
@@ -86,6 +106,10 @@ a = Analysis(
     excludes=[],
     noarchive=False,
 )
+if EXCLUDED_ON_PURPOSE:
+    a.binaries = [entry for entry in a.binaries
+                  if not any(os.path.basename(entry[0]).startswith(name)
+                             for name in EXCLUDED_ON_PURPOSE)]
 pyz = PYZ(a.pure)
 
 exe = EXE(
