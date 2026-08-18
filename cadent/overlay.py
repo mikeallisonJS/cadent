@@ -656,3 +656,52 @@ class Overlay(QWidget):
     def _hide_if_faded(self) -> None:
         if self.windowOpacity() <= 0.01:
             self.hide()
+
+
+class NoOverlay:
+    """The overlay's shape with no window behind it — what `app.py` builds
+    where `Capabilities.overlay` is None (the Linux Wayland tiers, ADR 0014).
+
+    Every call is a no-op. Failure feedback is not lost: each failure path in
+    `CadentApp._handle_report` already pairs `show_failure` with a
+    `tray.message()`, and Qt's D-Bus tray backend delivers that as a desktop
+    notification even on a desktop with no tray host — so on these tiers the
+    toast *is* the failure channel. No start/stop chatter: recording state
+    there is the tray icon alone.
+    """
+
+    def __init__(self) -> None:
+        self.level_source: Callable[[], float] | None = None
+
+    def realize(self) -> None:
+        pass
+
+    def set_tokens(self, t: dict) -> None:
+        pass
+
+    def set_cleanup(self, on: bool) -> None:
+        pass
+
+    def set_show_activity(self, show: bool) -> None:
+        pass
+
+    def show_recording(self) -> None:
+        pass
+
+    def show_transcribing(self) -> None:
+        pass
+
+    def show_cleaning(self) -> None:
+        pass
+
+    def show_cancelled(self) -> None:
+        pass
+
+    def show_paused(self) -> None:
+        pass
+
+    def show_failure(self, detail: str = "") -> None:
+        pass
+
+    def hide_overlay(self) -> None:
+        pass

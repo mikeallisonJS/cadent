@@ -116,3 +116,38 @@ def test_the_scan_would_catch_a_real_adapter():
     """The scan proves it has teeth on the one file known to be full of OS
     imports — otherwise a scan that silently matched nothing would pass."""
     assert violations_in("cadent.platform.win32")
+
+
+# ---- the platform package never imports the GUI toolkit (ADR 0013) --------
+
+GUI_TOOLKIT = {"PySide6", "shiboken6", "PyQt6", "PyQt5", "PySide2"}
+
+
+def platform_modules():
+    yield "cadent.platform"
+    for info in pkgutil.walk_packages([str(PACKAGE_DIR / "platform")],
+                                      prefix="cadent.platform.",
+                                      onerror=_walk_error):
+        yield info.name
+
+
+def gui_imports_in(name: str) -> list[str]:
+    path = module_path(name)
+    package = name.split(".") if path.name == "__init__.py" \
+        else name.split(".")[:-1]
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return [imported for imported in imported_names(tree, package)
+            if imported.split(".")[0] in GUI_TOOLKIT]
+
+
+def test_the_platform_package_never_imports_the_gui_toolkit():
+    """Adapters are Qt-free on every OS (spec M6 §2.1): portal signals fan
+    out from their own thread and QtDBus is out, so nothing under
+    `cadent/platform/` — win32 and darwin included — may import PySide6."""
+    report = {name: found for name in platform_modules()
+              if (found := gui_imports_in(name))}
+    assert report == {}
+
+
+def test_the_gui_scan_would_catch_a_real_widget_module():
+    assert gui_imports_in("cadent.overlay")

@@ -126,6 +126,29 @@ class Capabilities:
     # Why the theme control appears inert while a contrast setting is on —
     # same reason, two OS vocabularies (contrast theme / increased contrast).
     high_contrast_reason: str
+    # ---- the tier-shaped facts (ADR 0013/0014, spec M6 §2.4) ---------------
+    # What kind of overlay this platform can show: "windowed" (today's
+    # overlay.py, Move mode included) on win32/darwin and Linux X11; None on
+    # the Wayland tiers, where failure feedback goes to `tray.message()`
+    # instead; "anchored" is reserved for a layer-shell helper. Overlay
+    # construction, the Move-overlay button and the position rows all gate on
+    # `overlay == "windowed"`.
+    overlay: str | None
+    # Whether per-app overrides and auto-learn apply in this session — False
+    # only where the focused app cannot be named (GNOME Wayland). The pane
+    # stays editable regardless; this only decides the note it carries.
+    per_app_overrides: bool
+    # Linux's support tier ("whole" / "portal" / "reduced"), None elsewhere;
+    # `support_tier_summary` is the adapter-built sentence Settings ▸ General
+    # and the wizard's Done page show — never assembled by UI code.
+    support_tier: str | None
+    support_tier_summary: str | None
+    # The chords this platform ships as defaults for the dictation hotkey and
+    # the cleanup tap. Platform facts rather than `Config` literals because
+    # the freedesktop shortcuts grammar needs a keysym: a modifier-only chord
+    # is unbindable on Wayland, so those tiers default differently.
+    default_combo: str
+    default_cleanup_combo: str
 
 
 class KeyboardOutput(Protocol):
@@ -195,9 +218,14 @@ class FocusedApp(Protocol):
 class HotkeyTap(Protocol):
     """The OS event hook. Feeds raw key events; chord.py stays pure."""
 
-    def start(self, on_event: Callable[[int, bool, bool], None]) -> None:
+    def start(self, on_event: Callable[[int, bool, bool], None],
+              chords: tuple[str, ...] = ()) -> None:
         """Begin listening; on_event(keycode, is_down, injected) is called on
-        the hook's own thread and must stay fast."""
+        the hook's own thread and must stay fast. `chords` are the combos the
+        caller will recognize (dictation, cleanup tap): a whole-keyboard hook
+        (win32, darwin, X11) ignores them; a portal that binds named
+        shortcuts (Linux Wayland) registers exactly these and synthesizes
+        the parsed keysym events they stand for."""
         ...
 
     def stop(self) -> None: ...

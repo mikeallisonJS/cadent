@@ -40,6 +40,9 @@ class PushToTalk:
         self._sm = ChordStateMachine(combo, mode, min_hold_s)
         self._cleanup_tap = (TapChord(cleanup_combo)
                              if cleanup_combo and on_cleanup_toggle else None)
+        # What the tap is told to listen for; a whole-keyboard hook ignores it.
+        self._chords: tuple[str, ...] = ((combo,) + ((cleanup_combo,)
+                                         if self._cleanup_tap else ()))
         self._handlers = {
             Action.START: on_start,
             Action.STOP: on_stop,
@@ -75,7 +78,7 @@ class PushToTalk:
         self._running = True
         self._worker = threading.Thread(target=self._run_worker, daemon=True)
         self._worker.start()
-        self._tap.start(self._on_key_event)
+        self._tap.start(self._on_key_event, chords=self._chords)
 
     def stop(self) -> None:
         if not self._running:

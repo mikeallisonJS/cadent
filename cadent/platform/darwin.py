@@ -564,7 +564,8 @@ class DarwinHotkeyTap:
     def __init__(self) -> None:
         self._listener = None
 
-    def start(self, on_event) -> None:
+    def start(self, on_event, chords=()) -> None:
+        # `chords` is ignored: the event tap sees the whole keyboard.
         if self._listener is not None:
             return
         from pynput import keyboard

@@ -123,9 +123,11 @@ class GeneralPane(QWidget):
         self.move_button = QPushButton("Move overlay…")
         self.move_button.clicked.connect(ctx.request_move_overlay)
 
-        layout.addSpacing(int(t["sp_2"]))
-        layout.addWidget(caps("Overlay", t))
-        layout.addWidget(card([
+        # The whole section gates on the platform fact (ADR 0014): where no
+        # windowed overlay exists there is nothing to show, snap or move, and
+        # failures reach the user as notifications instead.
+        self.overlay_section = caps("Overlay", t)
+        self.overlay_card = card([
             # The toggle governs the *activity* states only — failures appear
             # regardless, so turning off the indicator never turns off the
             # alarm (§4.8).
@@ -135,7 +137,13 @@ class GeneralPane(QWidget):
                 desc="Soft-snap to the centre and the bottom margin when moving it"),
             row(t, "Overlay position", self.move_button,
                 desc="Drag a stand-in pill; the real one stays click-through"),
-        ]))
+        ])
+        windowed = self._caps.overlay == "windowed"
+        self.overlay_section.setVisible(windowed)
+        self.overlay_card.setVisible(windowed)
+        layout.addSpacing(int(t["sp_2"]))
+        layout.addWidget(self.overlay_section)
+        layout.addWidget(self.overlay_card)
         layout.addStretch()
 
         self.set_high_contrast(high_contrast)

@@ -416,8 +416,9 @@ class FakeHotkeyTap:
         self.starts = 0
         self.stops = 0
 
-    def start(self, on_event):
+    def start(self, on_event, chords=()):
         self.on_event = on_event
+        self.chords = tuple(chords)
         self.starts += 1
 
     def stop(self):

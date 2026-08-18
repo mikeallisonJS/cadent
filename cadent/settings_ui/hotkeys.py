@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QComboBox, QLineEdit, QSpinBox, QVBoxLayout, QWidget
 
-from .. import settings
+from .. import platform, settings
 from ..chord import parse_combo
 from .context import PaneContext
 from .widgets import Notice, card, label, page_title, row
@@ -84,7 +84,8 @@ class HotkeysPane(QWidget):
             try:
                 parse_combo(field.text().strip())
             except ValueError:
-                return f"{caption} isn't a valid chord (e.g. <ctrl>+<cmd>)"
+                example = platform.current().capabilities.default_combo
+                return f"{caption} isn't a valid chord (e.g. {example})"
         return None
 
     def _validate(self) -> None:

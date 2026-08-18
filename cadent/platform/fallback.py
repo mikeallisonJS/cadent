@@ -84,7 +84,7 @@ class NullHotkeyTap:
     never fired either, so a silent tap is the same behaviour without the
     thread (#129: the listener lies — `running == True` while deaf)."""
 
-    def start(self, on_event) -> None:
+    def start(self, on_event, chords=()) -> None:
         pass
 
     def stop(self) -> None:
@@ -190,6 +190,12 @@ CAPABILITIES = Capabilities(
     theme_subtitle="Follows your system colour mode",
     high_contrast_reason=("Your system is using a contrast theme, so Cadent "
                           "is following its colours"),
+    overlay="windowed",
+    per_app_overrides=True,
+    support_tier=None,
+    support_tier_summary=None,
+    default_combo="<ctrl>+<cmd>",
+    default_cleanup_combo="<ctrl>+<shift>+<alt>",
 )
 
 

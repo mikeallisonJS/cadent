@@ -30,7 +30,7 @@ from .history import History
 from .history_ui import HistoryWindow
 from .hotkey import PushToTalk
 from .inject import Injector, learn_override
-from .overlay import Overlay
+from .overlay import NoOverlay, Overlay
 from .pipeline import DictationReport, Pipeline
 from .settings_ui import SettingsWindow
 from .stt import make_engine
@@ -124,7 +124,14 @@ class CadentApp:
         # Focus-visible: ring on Tab, nothing on click. Held on self because
         # an event filter that gets collected silently stops filtering.
         self.focus_filter = a11y.install(self.qt)
-        self.overlay = Overlay(self.config, self.theme.tokens, platform=self.platform)
+        # A windowed overlay only where the platform says one can exist (ADR
+        # 0014); elsewhere the same shape with nothing behind it, and every
+        # failure path below already carries a `tray.message()`.
+        if self.platform.capabilities.overlay == "windowed":
+            self.overlay = Overlay(self.config, self.theme.tokens,
+                                   platform=self.platform)
+        else:
+            self.overlay = NoOverlay()
         self.overlay.level_source = lambda: self.recorder.level
         # Realized at startup rather than on the first show: otherwise the
         # first pill of every session pays window-creation and first-paint
