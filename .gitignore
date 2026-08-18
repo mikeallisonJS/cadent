@@ -16,3 +16,7 @@ build/
 
 # Claude Code's per-agent worktrees — each is its own git repo.
 .claude/worktrees/
+
+# Noisy evaluation set for the noise-reduction effort (#43): regenerable via
+# scripts/noise_eval.py, and own-voice clips are personal.
+evalset/
