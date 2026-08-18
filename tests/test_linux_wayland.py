@@ -639,7 +639,7 @@ def test_selection_transfer_writes_off_the_portal_thread(monkeypatch):
     session = RemoteDesktopSession(bus, portal.RequestTokens(), TokenStore(
         __import__("pathlib").Path("unused")), want_clipboard=True, worker=inline)
     session.handle, session.live = "/s/rd", True
-    clip = wt.PortalClipboard(bus, session)
+    wt.PortalClipboard(bus, session)          # subscribes SelectionTransfer
     spawned = []
     monkeypatch.setattr(wt, "_spawn", lambda fn: spawned.append(fn))
     bus.emit(portal.PORTAL_PATH, portal.CLIPBOARD_IFACE, "SelectionTransfer", "osu",
