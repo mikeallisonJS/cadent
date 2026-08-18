@@ -120,13 +120,20 @@ inert on the wizard's model page while one is running.
 _Avoid_: aborted, interrupted, errored
 
 **Permission preflight**:
-The one OS grant Cadent cannot work without — Accessibility on darwin,
-none on Windows (`Capabilities.permission_preflight`). Surfaced twice since
-#148, never as a prompt: a darwin-only wizard step that deep-links and
-re-checks on its own, and a persistent Settings banner that clears itself the
-moment the grant lands. Neither gates anything — the wizard's Next stays
+The one OS grant Cadent cannot work without — Accessibility on darwin, the
+portal grant on Linux's Wayland tiers, none on Windows or Linux X11
+(`Capabilities.permission`, which carries both the name and the words each
+surface renders; ADR 0012). Surfaced three times since #148, never as a
+prompt: a wizard step, a persistent Settings banner that clears itself the
+moment the grant lands, and the `permission-needed` tray fault for when
+neither window is open. None of them gates anything — the wizard's Next stays
 enabled, because a managed Mac that cannot grant must still finish setup.
-_Avoid_: TCC nag, permission dialog, onboarding gate
+**Where the grant is given differs, so the verb does**: darwin deep-links to
+System Settings, Linux raises the dialog by making the portal request — both
+through `DesktopEnv.request_permission()`, which never blocks and never
+retries on its own.
+_Avoid_: TCC nag, permission dialog, onboarding gate, "open permission
+settings" (there are none to open on Linux)
 
 **App picker**:
 The overrides pane's add affordance where `Capabilities.app_picker` is true
