@@ -5,6 +5,11 @@ and are rendered here by the release PR — see `docs/agents/releases.md`.
 
 <!-- towncrier release notes start -->
 
+## v0.5.1 — 2026-08-18
+
+No significant changes.
+
+
 ## v0.5.0 — 2026-08-15
 
 ### Features

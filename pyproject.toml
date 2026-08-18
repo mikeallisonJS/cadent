@@ -1,6 +1,6 @@
 [project]
 name = "cadent"
-version = "0.5.0"
+version = "0.5.1"
 description = "Fully-local push-to-talk AI dictation for Windows and macOS: transcribe, clean up, insert at the cursor"
 requires-python = ">=3.11"
 classifiers = [
