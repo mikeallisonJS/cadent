@@ -20,13 +20,15 @@ from .base import (
     HotkeyTap,
     KeyboardOutput,
     KeycodeTable,
+    PermissionPreflight,
     Platform,
     SingleInstance,
 )
 
 __all__ = [
     "Autostart", "Capabilities", "Clipboard", "DesktopEnv", "FocusedApp",
-    "HardwareProbe", "HotkeyTap", "KeyboardOutput", "KeycodeTable", "Platform",
+    "HardwareProbe", "HotkeyTap", "KeyboardOutput", "KeycodeTable",
+    "PermissionPreflight", "Platform",
     "SingleInstance", "current",
 ]
 

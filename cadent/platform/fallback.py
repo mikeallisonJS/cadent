@@ -133,8 +133,8 @@ class NullDesktop:
         except Exception:
             pass
 
-    def open_permission_settings(self) -> None:
-        pass    # no permission_preflight, nowhere to link
+    def request_permission(self) -> None:
+        pass    # no permission preflight, nothing to ask for
 
     def text_scale_factor(self) -> float:
         return 1.0
@@ -174,7 +174,7 @@ CAPABILITIES = Capabilities(
     gpu_only_engines=frozenset({"parakeet"}),
     show_runtime_combo=True,
     gpu_pack_available=True,
-    permission_preflight=None,
+    permission=None,
     autostart_label="Start with Windows",
     app_identity_placeholder="app.exe",
     app_picker=False,

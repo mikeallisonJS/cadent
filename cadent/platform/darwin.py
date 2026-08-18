@@ -29,7 +29,7 @@ from pathlib import Path
 
 from .. import config
 from ..inject import utf16_chunks
-from .base import Platform
+from .base import PermissionPreflight, Platform
 from .fallback import CAPABILITIES
 from .keycodes import DARWIN_KEYCODES
 
@@ -139,6 +139,23 @@ ACCESSIBILITY_SETTINGS_URL = (
     "?Privacy_Accessibility")
 
 
+# The Accessibility grant, described for the surfaces (ADR 0012): the words
+# used to live in settings_ui/window.py and wizard.py as darwin copy inside
+# cross-platform modules; now the adapter says them and the surfaces render.
+ACCESSIBILITY = PermissionPreflight(
+    name="accessibility",
+    banner=("Cadent needs the Accessibility permission to type what you "
+            "dictate. Turn Cadent on under Privacy & Security → Accessibility."),
+    wizard_body=("macOS only lets Cadent type into other apps once you grant "
+                 "it Accessibility. In System Settings, turn Cadent on under "
+                 "Privacy & Security → Accessibility, then come back here."),
+    action_label="Open System Settings",
+    waiting=("Waiting for the permission — Cadent notices the moment it is "
+             "granted."),
+    granted="Accessibility is granted — Cadent can type for you.",
+)
+
+
 class DarwinDesktop:
     def open_path(self, path: Path) -> None:
         try:
@@ -146,7 +163,9 @@ class DarwinDesktop:
         except Exception:
             pass
 
-    def open_permission_settings(self) -> None:
+    def request_permission(self) -> None:
+        """Deep-link to the Accessibility list; the grant itself is given
+        there, and `permission_granted()` reports when it lands."""
         try:
             subprocess.Popen(["open", ACCESSIBILITY_SETTINGS_URL])
         except Exception:
@@ -593,7 +612,7 @@ def create() -> Platform:
             gpu_only_engines=frozenset(),
             show_runtime_combo=False,
             gpu_pack_available=False,
-            permission_preflight="accessibility",
+            permission=ACCESSIBILITY,
             app_identity_placeholder="com.example.app",
             autostart_label="Start at login",
             app_picker=True,

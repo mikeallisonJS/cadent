@@ -463,7 +463,7 @@ class FakeDesktop:
 
     def __init__(self):
         self.opened: list = []
-        self.permission_settings_opens = 0
+        self.permission_requests = 0
         # The tray ink a test wants this desktop to be sitting on, and the
         # callback the app registered — so a test can drive a taskbar theme
         # change without a registry.
@@ -474,8 +474,8 @@ class FakeDesktop:
     def open_path(self, path):
         self.opened.append(path)
 
-    def open_permission_settings(self):
-        self.permission_settings_opens += 1
+    def request_permission(self):
+        self.permission_requests += 1
 
     def text_scale_factor(self):
         return 1.0
@@ -550,6 +550,7 @@ def pin_darwin_ui_platform(monkeypatch, *, granted=True, running=None,
     import dataclasses
 
     from cadent import platform as platform_pkg
+    from cadent.platform import PermissionPreflight
 
     plat = make_platform(
         focused_app=FakeFocusedApp(name="com.apple.Terminal", granted=granted,
@@ -565,7 +566,14 @@ def pin_darwin_ui_platform(monkeypatch, *, granted=True, running=None,
         gpu_only_engines=frozenset(),
         show_runtime_combo=False,
         gpu_pack_available=False,
-        permission_preflight="accessibility",
+        permission=PermissionPreflight(
+            name="accessibility",
+            banner="Cadent needs the Accessibility permission to type "
+                   "what you dictate.",
+            wizard_body="Grant Accessibility in System Settings.",
+            action_label="Open System Settings",
+            waiting="Waiting for the permission.",
+            granted="Accessibility is granted."),
         autostart_label="Start at login",
         app_identity_placeholder="com.example.app",
         app_picker=True,

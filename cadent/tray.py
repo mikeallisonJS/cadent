@@ -33,6 +33,10 @@ FAULTS: dict[str, str] = {
     "cleanup-failed": "cleanup unavailable",
     "engine-on-cpu": "speech engine rebuilding on CPU",
     "config-unreadable": "config.json couldn't be read",
+    # The platform's one grant is missing (ADR 0012): Accessibility on
+    # darwin, the portal grant on Linux's Wayland tiers. Set by the app's
+    # grant poll, so it clears with no window open.
+    "permission-needed": "permission needed",
 }
 
 # Offers clear when they are *seen*. Without that split an NVIDIA user who

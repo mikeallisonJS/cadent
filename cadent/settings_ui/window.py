@@ -14,7 +14,7 @@ visible and enabled, so it reads as a heading and cannot be landed on.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics
 from PySide6.QtWidgets import (
     QDialog,
@@ -69,11 +69,6 @@ STRUCTURE = (
 UNREADABLE_CONFIG = ("config.json couldn't be read, so Cadent started with "
                      "default settings. Changes you make now won't survive a "
                      "restart.")
-
-NEEDS_PERMISSION = ("Cadent needs the Accessibility permission to type "
-                    "what you dictate. Turn Cadent on under Privacy & "
-                    "Security → Accessibility.")
-
 
 class NavRail(QListWidget):
     """The sidebar, sized by its rows rather than by a constant.
@@ -211,19 +206,19 @@ class SettingsWindow(QDialog):
         # vocabulary pane rather than inventing a second pattern (§7.2).
         self.banner.setVisible(not store.readable)
         body.addWidget(self.banner)
-        # The needs-Accessibility banner (M5 §7): persistent while the grant
-        # is missing, cleared the moment it lands — the poll below notices,
-        # because the grant is given in System Settings where no signal of
-        # ours can fire.
+        # The needs-permission banner (M5 §7, ADR 0012): persistent while the
+        # platform's grant is missing, cleared the moment it lands. The words
+        # and the action are the platform's (`Capabilities.permission`); the
+        # 2 s grant poll lives in the app, which calls `refresh_permission()`
+        # — the grant is given outside Cadent where no signal of ours fires.
+        plat = platform.current()
+        permission = plat.capabilities.permission
         self.permission_banner = Notice(
-            tokens, NEEDS_PERMISSION,
-            [("Open System Settings",
-              platform.current().desktop.open_permission_settings)])
-        self._permission_timer = QTimer(self)
-        self._permission_timer.setInterval(2000)
-        self._permission_timer.timeout.connect(self._refresh_permission)
+            tokens, permission.banner if permission else "",
+            [(permission.action_label, plat.desktop.request_permission)]
+            if permission else [])
         body.addWidget(self.permission_banner)
-        self._refresh_permission()
+        self.refresh_permission()
         body.addWidget(self.stack, 1)
 
         layout = QHBoxLayout(self)
@@ -325,15 +320,14 @@ class SettingsWindow(QDialog):
                     return notice
         return getattr(self, DEFAULT_NOTICE_PANE).notice
 
-    def _refresh_permission(self) -> None:
-        """Show the banner while `permission_preflight`'s grant is missing;
-        stop asking once it lands (or where there is no preflight at all)."""
+    def refresh_permission(self) -> None:
+        """Show the banner while `Capabilities.permission`'s grant is missing.
+        Called by the app's grant poll; reads the live answer itself so the
+        first paint is right before the poll has ticked once."""
         plat = platform.current()
-        missing = bool(plat.capabilities.permission_preflight) and \
+        missing = bool(plat.capabilities.permission) and \
             not plat.focused_app.permission_granted()
         self.permission_banner.setVisible(missing)
-        if not missing:
-            self._permission_timer.stop()
 
     def _open_config(self) -> None:
         open_in_explorer(self.store.path)
@@ -349,12 +343,9 @@ class SettingsWindow(QDialog):
     def showEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         super().showEvent(event)
         self._sync_microphone()
-        self._refresh_permission()
-        if self.permission_banner.isVisibleTo(self):
-            self._permission_timer.start()
+        self.refresh_permission()
 
     def hideEvent(self, event) -> None:  # noqa: N802
-        self._permission_timer.stop()
         # Hidden is this window's common resting state, not an edge case: the
         # app keeps the instance around and re-shows it from the tray.
         self.general.stop_monitoring()

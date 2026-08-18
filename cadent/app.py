@@ -15,7 +15,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from . import a11y, downloads, gpu_pack, hardware, icons, snippets, stt, vocabulary
@@ -177,6 +177,7 @@ class CadentApp:
                                               on_error=self.bridge.llm_failed.emit)
 
         self._setup_tray()
+        self._start_permission_poll()
         self.overlay.set_cleanup(self.config.cleanup_mode)
         self.ptt = self._make_ptt()
 
@@ -768,6 +769,30 @@ class CadentApp:
         # here, not beside the other theme subscriptions, because those are
         # connected before this tray exists.
         self.theme.changed.connect(self.tray.refresh)
+
+    # ---- the permission grant (ADR 0012) ---------------------------------
+
+    def _start_permission_poll(self) -> None:
+        """One 2 s poll of the platform's grant where `Capabilities.permission`
+        is set — the app owns the `permission-needed` fault, so a grant given
+        with no window open still turns the tray green, and the Settings
+        banner and wizard page read the same tick rather than each polling."""
+        self._permission_timer = None
+        if self.platform.capabilities.permission is None:
+            return
+        self._permission_timer = QTimer()
+        self._permission_timer.setInterval(2000)
+        self._permission_timer.timeout.connect(self._poll_permission)
+        self._permission_timer.start()
+        self._poll_permission()
+
+    def _poll_permission(self) -> None:
+        granted = self.platform.focused_app.permission_granted()
+        self.tray.set_fault("permission-needed", not granted)
+        if self.settings_window is not None and self.settings_window.isVisible():
+            self.settings_window.refresh_permission()
+        if self.wizard is not None and self.wizard.isVisible():
+            self.wizard.refresh_permission()
 
     def _toggle_pause(self, checked: bool) -> None:
         self.store.set("paused", checked)

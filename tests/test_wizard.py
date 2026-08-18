@@ -12,7 +12,6 @@ from conftest import pin_darwin_ui_platform
 from PySide6.QtCore import Qt
 
 from cadent import a11y, hardware, models
-from cadent import wizard as wizard_module
 from cadent.config_store import ConfigStore
 from cadent.downloads import Progress
 from cadent.settings_ui.model_picker import CHIP_ROLE, SUBTITLE_ROLE
@@ -371,7 +370,7 @@ def test_the_permission_page_deep_links_to_system_settings(darwin_wizard):
     win, plat = darwin_wizard
     at_permission_page(win)
     win.open_settings.click()
-    assert plat.desktop.permission_settings_opens == 1
+    assert plat.desktop.permission_requests == 1
 
 
 def test_the_permission_page_notices_the_grant_arriving(darwin_wizard):
@@ -379,10 +378,10 @@ def test_the_permission_page_notices_the_grant_arriving(darwin_wizard):
     back must not require finding a button."""
     win, plat = darwin_wizard
     at_permission_page(win)
-    assert win.permission_status.text() == wizard_module.PERMISSION_WAITING
+    assert win.permission_status.text() == plat.capabilities.permission.waiting
     plat.focused_app.granted = True
-    win._poll_permission()
-    assert win.permission_status.text() == wizard_module.PERMISSION_GRANTED
+    win.refresh_permission()
+    assert win.permission_status.text() == plat.capabilities.permission.granted
 
 
 def test_next_is_never_gated_on_the_grant(darwin_wizard):

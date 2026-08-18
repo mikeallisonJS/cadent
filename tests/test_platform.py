@@ -138,10 +138,11 @@ def test_darwin_capabilities_carry_the_accessibility_preflight():
     its preflight; every other platform has none."""
     from cadent.platform import fallback
 
-    assert fallback.CAPABILITIES.permission_preflight is None
+    assert fallback.CAPABILITIES.permission is None
     if sys.platform == "darwin":
         caps = platform.current().capabilities
-        assert caps.permission_preflight == "accessibility"
+        assert caps.permission.name == "accessibility"
+        assert caps.permission.action_label == "Open System Settings"
 
 
 def test_darwin_capabilities_carry_the_runtime_column():

@@ -54,7 +54,7 @@ WELCOME, BASICS, PERMISSION, GPU, MODEL, HOTKEY, DONE = range(7)
 PAGE_TITLES = (
     "Welcome to Cadent",
     "Microphone & basics",
-    "Accessibility permission",
+    "Permission",
     "GPU support pack",
     "Speech model",
     "Your dictation hotkey",
@@ -85,11 +85,6 @@ NO_MODEL_YET = ("Dictation stays off until a speech model is downloaded. "
                 "Open Settings ▸ Speech & cleanup when you're online, or pick "
                 "\"Finish setup…\" from the tray menu to come back here.")
 
-# What the permission page's status line reads (M5 §7). The page re-checks on
-# its own, so granting in System Settings and coming back needs no button.
-PERMISSION_WAITING = ("Waiting for the permission — Cadent notices the "
-                      "moment it's granted.")
-PERMISSION_GRANTED = "Accessibility is granted — Cadent can type for you."
 
 
 
@@ -102,8 +97,8 @@ class WizardState:
     """
 
     gpu_eligible: bool = False
-    # Capabilities.permission_preflight names a permission and the grant is
-    # missing (M5 §7) — the one darwin-only page. Fixed at construction: a
+    # Capabilities.permission names a grant and it is missing (M5 §7, ADR
+    # 0012) — one step for darwin and the Linux portals. Fixed at construction: a
     # page that vanished mid-wizard the moment the grant landed would shuffle
     # the step count under the user.
     permission_needed: bool = False
@@ -171,16 +166,13 @@ class SetupWizard(QDialog):
         self._t = tokens or default_tokens("dark")
         self.state = WizardState()
         self.state.model_downloaded = hardware.any_speech_model_downloaded(MODELS_DIR)
-        # The darwin-only Accessibility step (M5 §7): joins when the platform
-        # names a preflight and the grant is missing right now.
+        # The permission step (M5 §7, ADR 0012): joins when the platform
+        # names a preflight and the grant is missing right now. The app's
+        # grant poll calls `refresh_permission()` while the page is showing,
+        # so granting outside Cadent and coming back needs no button.
         caps = platform.current().capabilities
-        self.state.permission_needed = bool(caps.permission_preflight) and \
+        self.state.permission_needed = bool(caps.permission) and \
             not platform.current().focused_app.permission_granted()
-        # Re-checks the grant while the permission page is showing, so
-        # granting in System Settings and coming back needs no button.
-        self._permission_timer = QTimer(self)
-        self._permission_timer.setInterval(1000)
-        self._permission_timer.timeout.connect(self._poll_permission)
         # The last reading from the app's downloader. On the state rather than
         # on the bar, because the page is rebuilt on every visit.
         self._progress = Progress(0, 0)
@@ -407,7 +399,6 @@ class SetupWizard(QDialog):
                 widget.deleteLater()
 
         self._stop_monitoring()
-        self._permission_timer.stop()
 
         builder = {
             WELCOME: self._build_welcome, BASICS: self._build_basics,
@@ -507,35 +498,36 @@ class SetupWizard(QDialog):
             self._mic.start(device)
 
     def _build_permission(self) -> QWidget | None:
-        """The darwin-only Accessibility step (M5 §7): a deep link and a live
-        re-check. Never a gate — see SKIPPABLE's comment."""
-        self._add(label(
-            "macOS only lets Cadent type into other apps once you grant it "
-            "Accessibility. In System Settings, turn Cadent on under "
-            "Privacy & Security → Accessibility, then come back here.",
-            "RowDesc"))
-        self.open_settings = QPushButton("Open System Settings")
-        self.open_settings.clicked.connect(
-            platform.current().desktop.open_permission_settings)
+        """The permission step (M5 §7, ADR 0012): the platform's words, its
+        request action, and a live re-check driven by the app's grant poll.
+        Never a gate — see SKIPPABLE's comment."""
+        plat = platform.current()
+        permission = plat.capabilities.permission
+        self._add(label(permission.wizard_body, "RowDesc"))
+        self.open_settings = QPushButton(permission.action_label)
+        self.open_settings.clicked.connect(plat.desktop.request_permission)
         self._add(self.open_settings)
         self.permission_status = label("", "RowHint")
         self._add(self.permission_status)
         self.body_layout.addStretch()
-        self._poll_permission()
-        self._permission_timer.start()
+        self.refresh_permission()
         return self.open_settings
 
-    def _poll_permission(self) -> None:
-        granted = platform.current().focused_app.permission_granted()
+    def refresh_permission(self) -> None:
+        """Re-read the grant while the permission page is showing; called by
+        the app's poll (and once on build). Safe on any other page."""
+        if self.page != PERMISSION or not hasattr(self, "permission_status"):
+            return
+        plat = platform.current()
+        permission = plat.capabilities.permission
+        granted = plat.focused_app.permission_granted()
         was = self.permission_status.text()
         self.permission_status.setText(
-            PERMISSION_GRANTED if granted else PERMISSION_WAITING)
-        if granted:
-            self._permission_timer.stop()
-            if was == PERMISSION_WAITING:
-                # Announce the arrival once — the one state change on a page
-                # whose whole point is confirmation.
-                a11y.announce(self.permission_status, PERMISSION_GRANTED)
+            permission.granted if granted else permission.waiting)
+        if granted and was == permission.waiting:
+            # Announce the arrival once — the one state change on a page
+            # whose whole point is confirmation.
+            a11y.announce(self.permission_status, permission.granted)
 
     def _build_gpu(self) -> QWidget | None:
         """Offered **before** model choice, because accepting it changes the

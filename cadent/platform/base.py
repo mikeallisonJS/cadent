@@ -53,6 +53,22 @@ class KeycodeTable:
 
 
 @dataclass(frozen=True)
+class PermissionPreflight:
+    """The one OS grant Cadent cannot work without, as the platform describes
+    it (ADR 0012): Accessibility on darwin, the portal grant on Linux's
+    Wayland tiers. Carries the words every surface renders, so no permission
+    copy lives in cross-platform UI modules — a surface gates on
+    `Capabilities.permission` being set and reads the strings from here."""
+
+    name: str            # "accessibility" / "portal"
+    banner: str          # the Settings banner while the grant is missing
+    wizard_body: str     # the wizard step's explanation
+    action_label: str    # the button that calls `DesktopEnv.request_permission`
+    waiting: str         # wizard status while the grant is missing
+    granted: str         # wizard status once it lands
+
+
+@dataclass(frozen=True)
 class Capabilities:
     """Platform *facts* (spec §1.3). If a surface needs a platform fact not
     listed here, it goes in this table, not in an `if sys.platform` branch.
@@ -75,7 +91,10 @@ class Capabilities:
     gpu_only_engines: frozenset[str]
     show_runtime_combo: bool
     gpu_pack_available: bool                 # wizard page + tray items exist at all
-    permission_preflight: str | None         # None, or "accessibility" on darwin
+    # None, or the grant this OS needs (Accessibility on darwin, the portal
+    # grant on Linux's Wayland tiers) with the words its surfaces render.
+    # Gating stays a truthiness check; the app polls `permission_granted()`.
+    permission: PermissionPreflight | None
     autostart_label: str
     app_identity_placeholder: str            # "app.exe" / "com.example.app"
     app_picker: bool                         # running-apps picker vs free text only
@@ -156,7 +175,7 @@ class FocusedApp(Protocol):
         ...
 
     def permission_granted(self) -> bool:
-        """Is `Capabilities.permission_preflight`'s grant present? True where
+        """Is `Capabilities.permission`'s grant present? True where
         there is no preflight, and on a *failed* probe — a broken check must
         nag nobody."""
         ...
@@ -220,9 +239,12 @@ class DesktopEnv(Protocol):
         """Open a file in the user's associated app; never blocks, never raises."""
         ...
 
-    def open_permission_settings(self) -> None:
-        """Deep-link to where `permission_preflight`'s grant is given (System
-        Settings ▸ Accessibility on darwin); a no-op where there is none."""
+    def request_permission(self) -> None:
+        """Ask for `Capabilities.permission`'s grant: deep-link to System
+        Settings ▸ Accessibility on darwin, issue the portal requests on
+        Linux. Fire-and-forget — never blocks, never raises; the outcome is
+        read back through `FocusedApp.permission_granted()`. A no-op where
+        there is no preflight."""
         ...
 
     def text_scale_factor(self) -> float: ...

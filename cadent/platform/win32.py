@@ -244,7 +244,7 @@ class Win32FocusedApp:
             return None
 
     def permission_granted(self) -> bool:
-        return True     # no permission_preflight on Windows
+        return True     # no permission preflight on Windows
 
     def running_apps(self) -> list[tuple[str, str]]:
         return []       # `app_picker` is False: the pane lists process names
@@ -463,8 +463,8 @@ class Win32Desktop:
         except Exception:
             pass
 
-    def open_permission_settings(self) -> None:
-        pass    # no permission_preflight, nowhere to link
+    def request_permission(self) -> None:
+        pass    # no permission preflight, nothing to ask for
 
     def text_scale_factor(self) -> float:
         """Windows' accessibility **Text size** setting (100-225%) as a
@@ -639,7 +639,7 @@ CAPABILITIES = Capabilities(
     gpu_only_engines=frozenset({"parakeet"}),
     show_runtime_combo=True,
     gpu_pack_available=True,
-    permission_preflight=None,
+    permission=None,
     autostart_label="Start with Windows",
     app_identity_placeholder="app.exe",
     app_picker=False,
