@@ -79,6 +79,7 @@ dependencies = [
     { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'" },
     { name = "pyperclip" },
     { name = "pyside6" },
+    { name = "python-xlib", marker = "sys_platform == 'linux'" },
     { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "rapidfuzz" },
     { name = "sounddevice" },
@@ -95,6 +96,7 @@ cleanup = [
 dev = [
     { name = "jeepney" },
     { name = "pytest" },
+    { name = "python-xlib" },
     { name = "ruff" },
     { name = "towncrier" },
 ]
@@ -120,6 +122,8 @@ requires-dist = [
     { name = "pyperclip", specifier = ">=1.9" },
     { name = "pyside6", specifier = ">=6.8" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "python-xlib", marker = "sys_platform == 'linux'", specifier = ">=0.33" },
+    { name = "python-xlib", marker = "extra == 'dev'", specifier = ">=0.33" },
     { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=306" },
     { name = "rapidfuzz", specifier = ">=3.14.5" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },

@@ -42,6 +42,10 @@ dependencies = [
     # bus socket directly — no native library, no LOAD_BEARING row. Only
     # `cadent/platform/linux/` imports it.
     "jeepney>=0.9; sys_platform == 'linux'",
+    # The X11 seams (XTEST typing, selection ownership, WM_CLASS identity);
+    # pynput's Xorg listener needs it too. Only `cadent/platform/linux/`
+    # imports it.
+    "python-xlib>=0.33; sys_platform == 'linux'",
     "psutil>=5.9",
     "pyperclip>=1.9",
     "platformdirs>=4.0",
@@ -56,8 +60,10 @@ cleanup = [
 dev = [
     "pytest>=8.0",
     # Unmarked here on purpose: the portal message-building tests drive
-    # jeepney's I/O-free core against a fake bus and must run on every CI leg.
+    # jeepney's I/O-free core against a fake bus, and the X11 keymap logic
+    # runs against a fake Display — both must run on every CI leg.
     "jeepney>=0.9",
+    "python-xlib>=0.33",
     "ruff>=0.5",
     "towncrier>=24.8",
 ]

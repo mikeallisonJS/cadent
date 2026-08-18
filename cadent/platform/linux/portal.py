@@ -45,6 +45,8 @@ from jeepney import (
     new_method_call,
 )
 
+from .keysyms import unicode_keysym  # noqa: F401  (re-exported for adapters)
+
 log = logging.getLogger(__name__)
 
 # ---- constants -------------------------------------------------------------
@@ -498,14 +500,6 @@ def remote_desktop_notify_keysym(session_handle: str, keysym: int,
     return new_method_call(
         portal_address(REMOTE_DESKTOP_IFACE), "NotifyKeyboardKeysym", "oa{sv}iu",
         (session_handle, {}, keysym, 1 if pressed else 0))
-
-
-def unicode_keysym(codepoint: int) -> int:
-    """The keysym for a character: Latin-1 keysyms are their code points; the
-    rest live at 0x01000000 + code point (xkbcommon)."""
-    if 0x20 <= codepoint <= 0x7E or 0xA0 <= codepoint <= 0xFF:
-        return codepoint
-    return 0x01000000 + codepoint
 
 
 # Clipboard portal (spec §3): rides an existing RemoteDesktop session;

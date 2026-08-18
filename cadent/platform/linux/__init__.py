@@ -241,16 +241,21 @@ def create() -> Platform:
     caps = capabilities_for(info)
     bus = open_portal_connection()
     log.info("Linux support tier: %s (%s)", info.tier, caps.support_tier_summary)
-    # The eight adapters: fallback-filled until their tickets land (#34
-    # Whole, #35/#36 Wayland, #37 identity, #38 runtimes, #39/#40 desktop
-    # and packaging seams). Each replaces one line here.
     stub = fallback.create()
+    if info.tier == WHOLE:
+        keyboard, clipboard, focused_app, hotkey_tap = _whole_adapters()
+    else:
+        # The Wayland fills arrive with #35/#36; fallback-filled until then.
+        keyboard, clipboard, focused_app, hotkey_tap = (
+            stub.keyboard, stub.clipboard, stub.focused_app, stub.hotkey_tap)
+    # Hardware (#38), autostart / single instance / desktop (#39, #40) are
+    # fallback-filled until their tickets land. Each replaces one line here.
     plat = Platform(
         capabilities=caps,
-        keyboard=stub.keyboard,
-        clipboard=stub.clipboard,
-        focused_app=stub.focused_app,
-        hotkey_tap=stub.hotkey_tap,
+        keyboard=keyboard,
+        clipboard=clipboard,
+        focused_app=focused_app,
+        hotkey_tap=hotkey_tap,
         hardware=stub.hardware,
         autostart=stub.autostart,
         single_instance=stub.single_instance,
@@ -259,6 +264,18 @@ def create() -> Platform:
     if bus is not None:
         bus.arm_gui_guard()
     return plat
+
+
+def _whole_adapters():
+    """The X11 seams (#34), sharing one `SendGate` so the tap can tell our
+    XTEST fakes from the user's keys (spec §3)."""
+    from .desktopfiles import DesktopIndex
+    from .x11 import SendGate, X11Clipboard, X11FocusedApp, X11HotkeyTap, X11Keyboard
+
+    gate = SendGate()
+    index = DesktopIndex()
+    return (X11Keyboard(gate), X11Clipboard(), X11FocusedApp(index),
+            X11HotkeyTap(gate))
 
 
 __all__ = [
