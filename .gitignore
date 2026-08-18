@@ -16,3 +16,4 @@ build/
 
 # Claude Code's per-agent worktrees — each is its own git repo.
 .claude/worktrees/
+bench_set/
