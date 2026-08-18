@@ -22,8 +22,15 @@ import cadent
 
 # The per-OS adapter modules: the only legal homes for OS imports. Only the
 # factory (cadent/platform/__init__.py) may import them.
-ADAPTERS = {"cadent.platform.win32", "cadent.platform.darwin"}
+ADAPTERS = {"cadent.platform.win32", "cadent.platform.darwin",
+            "cadent.platform.linux"}
 FACTORY = "cadent.platform"
+
+
+def is_adapter(name: str) -> bool:
+    """The adapter modules and, for the Linux subpackage, everything under
+    it (spec M6 §2.1: `cadent/platform/linux/` is a package from day one)."""
+    return any(name == a or name.startswith(a + ".") for a in ADAPTERS)
 
 # Top-level distributions that exist on one OS only. `ctypes.windll` is an
 # attribute, not a module, so the scan checks for it separately.
@@ -32,6 +39,7 @@ OS_ONLY_MODULES = {
     "AppKit", "Quartz", "Foundation", "Cocoa", "objc",     # macOS (pyobjc)
     "ApplicationServices",                                 # macOS (pyobjc, #144)
     "fcntl",                                               # Unix only
+    "Xlib", "jeepney",                                     # Linux (M6 §2.5)
 }
 
 PACKAGE_DIR = Path(cadent.__file__).parent
@@ -48,7 +56,7 @@ def walkable_modules():
     yield "cadent"
     for info in pkgutil.walk_packages([str(PACKAGE_DIR)], prefix="cadent.",
                                       onerror=_walk_error):
-        if info.name not in ADAPTERS:
+        if not is_adapter(info.name):
             yield info.name
 
 
@@ -93,7 +101,7 @@ def violations_in(name: str) -> list[str]:
         top = imported.split(".")[0]
         if top in OS_ONLY_MODULES:
             found.append(f"imports OS-only module {imported!r}")
-        if imported in ADAPTERS and name != FACTORY:
+        if is_adapter(imported) and name != FACTORY:
             found.append(f"imports adapter {imported!r} (only the factory may)")
         if imported == "ctypes.windll":
             found.append("imports ctypes.windll")

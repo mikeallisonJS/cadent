@@ -4,10 +4,11 @@ version = "0.5.0"
 description = "Fully-local push-to-talk AI dictation for Windows and macOS: transcribe, clean up, insert at the cursor"
 requires-python = ">=3.11"
 classifiers = [
-    # The two OSes with a real platform adapter and a CI leg. Anything else
+    # The three OSes with a real platform adapter and a CI leg. Anything else
     # resolves to `platform/fallback.py`, which is a dev stub, not support.
     "Operating System :: Microsoft :: Windows",
     "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX :: Linux",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
 dependencies = [
@@ -37,6 +38,10 @@ dependencies = [
     "pyobjc-framework-Quartz>=10; sys_platform == 'darwin'",
     "pyobjc-framework-ApplicationServices>=10; sys_platform == 'darwin'",
     "pywin32>=306; sys_platform == 'win32'",
+    # The Linux portal transport (ADR 0013): pure Python, speaks the session
+    # bus socket directly — no native library, no LOAD_BEARING row. Only
+    # `cadent/platform/linux/` imports it.
+    "jeepney>=0.9; sys_platform == 'linux'",
     "psutil>=5.9",
     "pyperclip>=1.9",
     "platformdirs>=4.0",
@@ -50,6 +55,9 @@ cleanup = [
 ]
 dev = [
     "pytest>=8.0",
+    # Unmarked here on purpose: the portal message-building tests drive
+    # jeepney's I/O-free core against a fake bus and must run on every CI leg.
+    "jeepney>=0.9",
     "ruff>=0.5",
     "towncrier>=24.8",
 ]

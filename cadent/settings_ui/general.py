@@ -86,11 +86,20 @@ class GeneralPane(QWidget):
         # reading as redo rather than as something still to do.
         self.wizard_button = QPushButton("Run setup wizard")
         self.wizard_button.clicked.connect(ctx.request_wizard)
-        layout.addWidget(caps("Setup", t))
-        layout.addWidget(card([
+        setup_rows = [
             row(t, "Setup", self.wizard_button,
                 desc="Walk through microphone, model and hotkey again"),
-        ]))
+        ]
+        # The support-tier line (M6 §9.4): present on every Linux session,
+        # absent where the platform names no tier. The sentence is the
+        # adapter's — this pane never assembles it.
+        self.tier_row = None
+        if self._caps.support_tier is not None:
+            self.tier_row = row(t, "This session", None,
+                                desc=self._caps.support_tier_summary or "")
+            setup_rows.append(self.tier_row)
+        layout.addWidget(caps("Setup", t))
+        layout.addWidget(card(setup_rows))
 
         # Every group is named now: Setup taking the bare-first-card slot would
         # otherwise leave these rows heading-less and reading as Setup's own.

@@ -81,3 +81,40 @@ DARWIN_KEYCODES = KeycodeTable(
     function_keys=_CARBON_FUNCTION_KEYS,
     ord_fallback=False,
 )
+
+
+# X11 keysyms (X11/keysymdef.h) — one table for all three Linux tiers (ADR
+# 0008): the X11 tap reports keysyms resolved through the current keymap, and
+# the GlobalShortcuts portal names shortcuts in keysym terms, so neither an
+# evdev table nor a per-tier split is needed. Layout-resolved, so no
+# ord_fallback: an unknown part must drop rather than press whatever ord()
+# lands on. Sided modifiers both sides, like the VK and Carbon groups.
+_KEYSYM_GROUPS: dict[str, frozenset[int]] = {
+    "<ctrl>": frozenset({0xFFE3, 0xFFE4}),      # Control_L, Control_R
+    "<shift>": frozenset({0xFFE1, 0xFFE2}),     # Shift_L, Shift_R
+    "<alt>": frozenset({0xFFE9, 0xFFEA}),       # Alt_L, Alt_R
+    "<cmd>": frozenset({0xFFEB, 0xFFEC}),       # Super_L, Super_R
+}
+
+# What a synthetic chord presses: the left-hand keysym of each modifier;
+# "win" and "option" are accepted spellings, as on the other tables.
+_KEYSYM_MODIFIERS: dict[str, int] = {
+    "ctrl": 0xFFE3, "shift": 0xFFE1, "alt": 0xFFE9, "option": 0xFFE9,
+    "cmd": 0xFFEB, "win": 0xFFEB,
+}
+
+# Latin-1 keysyms equal their code points; "space" is named so a Wayland
+# default like <ctrl>+<cmd>+space parses.
+_KEYSYM_CHARS: dict[str, int] = {
+    **{c: ord(c) for c in "abcdefghijklmnopqrstuvwxyz0123456789"},
+    "space": 0x20,
+}
+
+LINUX_KEYCODES = KeycodeTable(
+    groups=_KEYSYM_GROUPS,
+    modifiers=_KEYSYM_MODIFIERS,
+    chars=_KEYSYM_CHARS,
+    # XK_F1 … XK_F35 are contiguous from 0xFFBE.
+    function_keys={f"f{n}": 0xFFBE + n - 1 for n in range(1, 36)},
+    ord_fallback=False,
+)
