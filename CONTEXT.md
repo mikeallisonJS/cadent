@@ -119,28 +119,65 @@ the partial, so a cancelled download starts over — which is why Escape goes
 inert on the wizard's model page while one is running.
 _Avoid_: aborted, interrupted, errored
 
+**Support tier**:
+Which promise Cadent makes about the core loop on Linux, decided once at
+startup from the session type and desktop and carried as a platform fact — one
+build, three tiers. **Whole** (X11 on any desktop) is Windows parity: the
+shipped chord, type-first with paste fallback, auto-learn, the windowed
+overlay, per-app overrides, no permission. **Portal** (Wayland on Plasma,
+wlroots, SteamOS desktop) is the loop intact but portal-shaped: a
+keysym-bearing default chord, paste-first with no auto-learn, overrides keyed
+on the desktop-file id, a portal grant as the permission preflight — and no
+overlay in v1 (ADR 0014; a layer-shell pill is a follow-on effort). **Reduced**
+(GNOME Wayland, run natively — never forced under XWayland) is the same
+paste-first portal ladder — the Clipboard portal rides the RemoteDesktop
+session that already types — with no overlay and no per-app overrides
+(ADR 0007, ADR 0009). Portal and Reduced differ only in per-app overrides.
+Tiers carry the promises; distros never do. Raw evdev/uinput input would be an
+opt-in *mode* overlaying a Wayland tier rather than a tier of its own — v1
+does not ship it at all, and never as a silent fallback (ADR 0008). A tier's
+name is not a promise its bus can keep: where the desktop places a session in
+a tier whose portal is missing, the affected rung is dropped for that run and
+the copy says so — never a fourth tier. The user reads the tier in one
+Settings ▸ General row (`support_tier_summary`, ADR 0012).
+_Avoid_: compatibility level, X11 mode / Wayland mode, degraded mode
+
 **Permission preflight**:
-The one OS grant Cadent cannot work without — Accessibility on darwin,
-none on Windows (`Capabilities.permission_preflight`). Surfaced twice since
-#148, never as a prompt: a darwin-only wizard step that deep-links and
-re-checks on its own, and a persistent Settings banner that clears itself the
-moment the grant lands. Neither gates anything — the wizard's Next stays
+The one OS grant Cadent cannot work without — Accessibility on darwin, the
+portal grant on Linux's Wayland tiers, none on Windows or Linux X11
+(`Capabilities.permission`, which carries both the name and the words each
+surface renders; ADR 0012). Surfaced three times since #148, never as a
+prompt: a wizard step, a persistent Settings banner that clears itself the
+moment the grant lands, and the `permission-needed` tray fault for when
+neither window is open. None of them gates anything — the wizard's Next stays
 enabled, because a managed Mac that cannot grant must still finish setup.
-_Avoid_: TCC nag, permission dialog, onboarding gate
+**Where the grant is given differs, so the verb does**: darwin deep-links to
+System Settings, Linux raises the dialog by making the portal request — both
+through `DesktopEnv.request_permission()`, which never blocks and never
+retries on its own.
+_Avoid_: TCC nag, permission dialog, onboarding gate, "open permission
+settings" (there are none to open on Linux)
 
 **App picker**:
 The overrides pane's add affordance where `Capabilities.app_picker` is true
-(darwin, #148): the running regular-activation-policy apps, rendered
-"Display Name — bundle.id" and storing the id — nobody knows their
-terminal's bundle identifier, and a mistyped one is a silent no-op forever.
-Free text stays accepted; override and history rows render display names by
-live lookup against what is running, raw identity otherwise.
+(darwin, #148; Linux, #21): the apps a user could target, rendered
+"Display Name — identity" and storing the identity — nobody knows their
+terminal's bundle identifier or desktop-file id, and a mistyped one is a
+silent no-op forever. Darwin lists the running regular-activation-policy
+apps; Linux lists the *installed* applications (their `.desktop` files),
+which every support tier can read. Free text stays accepted; override and
+history rows render display names — by live lookup against what is running
+on darwin, by desktop-file name on Linux — raw identity otherwise.
 _Avoid_: app dropdown, bundle browser
 
 **GPU support pack**:
-The two cuBLAS DLLs (`cublas64_12.dll`, `cublasLt64_12.dll`) that let the
-CPU-safe build use CUDA, downloaded once — disclosed, user-initiated from the
-tray, never silent — into `%LOCALAPPDATA%\Cadent\cuda`, which is prepended
-to `PATH` at startup. Offered only when an NVIDIA driver is present but the
-speech engine fell back to CPU. Deleting the directory reverts to CPU.
+The CUDA runtime libraries the *current speech engine* needs to reach the
+GPU, downloaded once — disclosed, user-initiated from the tray, never
+silent — into the app's data dir. One surface everywhere it exists; what it
+fetches is an **edition** keyed by engine: on Windows the two cuBLAS DLLs
+(`cublas64_12.dll`, `cublasLt64_12.dll`) for faster-whisper, prepended to
+`PATH`; on Linux the same cuBLAS pair for faster-whisper *and* the CUDA-13
+stack for Parakeet, preloaded at startup (ADR 0010). Offered only when an
+NVIDIA driver that can use it is present but the speech engine fell back to
+CPU. Deleting the directory reverts to CPU.
 _Avoid_: CUDA runtime install, GPU flavor
