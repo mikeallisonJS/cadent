@@ -28,7 +28,7 @@ Ground truth while implementing: `CONTEXT.md` (glossary: *Support tier*, *Permis
 | Tier | Where | Core-loop promise (as amended) |
 | --- | --- | --- |
 | **Whole** | X11, any desktop | Windows parity: shipped Ctrl+Super chord, type-first with paste fallback, auto-learn, windowed overlay, per-app overrides, no permission preflight |
-| **Portal** | Wayland on Plasma / wlroots / SteamOS desktop | Loop intact, portal-shaped: keysym-bearing default chord, paste-first, no auto-learn, overrides keyed on desktop-file id, permission preflight = portal grant, **no overlay in v1** (ADR 0014) |
+| **Portal** | Wayland on Plasma / wlroots / SteamOS desktop | Loop intact, portal-shaped: keysym-bearing default chord, paste-first, no auto-learn, overrides keyed on desktop-file id (via the compositor's toplevel protocol — dropped for the run where there is none), permission preflight = portal grant, **no overlay in v1** (ADR 0014) |
 | **Reduced** | GNOME Wayland, run natively | The same paste-first portal ladder (Clipboard portal rides the RemoteDesktop session — ADR 0007), no overlay, no per-app overrides (`FocusedApp.name()` is `"unknown"`), permission preflight = portal grant |
 
 **Portal and Reduced now differ only in per-app overrides.**
@@ -47,7 +47,7 @@ Ground truth while implementing: `CONTEXT.md` (glossary: *Support tier*, *Permis
 Session type and desktop fix the tier; then the Wayland tiers probe the portals. Where an interface is missing, the affected rung is **dropped for that run and the copy says so** — never a fourth tier, never a forced XWayland fallback:
 
 - No `org.freedesktop.portal.GlobalShortcuts` (stock Sway — xdg-desktop-portal-wlr ships Screenshot/ScreenCast only): Cadent starts with the hotkey **disarmed** and raises the `hotkey-unavailable` tray fault (§9.3).
-- No Clipboard portal (older backend) on Reduced: rungs collapse to `("type",)` for the run.
+- No paste mechanism (neither `ext-data-control-v1` nor the Clipboard portal) on **either** Wayland tier: rungs collapse to `("type",)` for the run — typing is the only rung, not a fall-through; the overrides pane says pasting isn't available. Reduced hits this on an older GNOME backend; Portal only on a compositor offering neither.
 - A wlroots compositor with neither `zwp_virtual_keyboard_v1` nor a RemoteDesktop backend is unsupported.
 
 ---
@@ -81,7 +81,7 @@ A blocking call from the GUI thread is a bug — **logged, not asserted** (an as
 | --- | --- | --- | --- |
 | **KeyboardOutput** | XTEST typing with a scratch keycode temporarily remapped for characters the layout lacks; XTEST chord for Ctrl+V; `send_mask_key()` no-op | Probe `zwp_virtual_keyboard_v1` (wlroots: client keymap, full unicode, no dialog) else RemoteDesktop `NotifyKeyboardKeysym` on a restore-token session; the paste chord rides the same mechanism | RemoteDesktop keysym path |
 | **Clipboard** | X selection ownership; XFixes `SelectionNotify` counter as `sequence_number()` | `ext-data-control-v1` where offered (KWin, wlroots), else Clipboard portal on the RemoteDesktop session (`RequestClipboard` before `Start`, `SetSelection`, `SelectionOwnerChanged` as the counter) | Clipboard portal on the RemoteDesktop session; absent → paste rung dropped for the run |
-| **FocusedApp** | identity via `WM_CLASS` → desktop-file id (§5); rect from X11; `injection_blocked()` → `None`; `permission_granted()` → `True` | identity via plasma-window-management (KDE-only, accepted); `injection_blocked()` → `None`; `permission_granted()` = shortcut bound **and** input session live | `name()` → `"unknown"`; `permission_granted()` as Portal |
+| **FocusedApp** | identity via `WM_CLASS` → desktop-file id (§5); rect from X11; `injection_blocked()` → `None`; `permission_granted()` → `True` | identity via `plasma-window-management` (KWin/SteamOS) or `wlr-foreign-toplevel-management` (wlroots), probed at startup — neither → `"unknown"` + `per_app_overrides=False` for the run; `injection_blocked()` → `None`; `permission_granted()` = shortcut bound **and** the RemoteDesktop session live *when the run's typing/paste mechanism needs it* (KWin/SteamOS yes; wlroots via virtual-keyboard + ext-data-control no) | `name()` → `"unknown"`; `permission_granted()` = shortcut bound and RemoteDesktop session live |
 | **HotkeyTap** | pynput XRecord, press+release, sided modifiers, no grant; `start()` ignores the chords argument | GlobalShortcuts portal: bind both chords in one call, synthesize parsed keysym events from `Activated`/`Deactivated` | as Portal |
 | **HardwareProbe** | `libcuda.so.1` loadable, driver-API VRAM read, `/proc/cpuinfo`, **new driver-CUDA-version fill** (`cuDriverGetVersion()`); `dx12_gpu_present`/`metal_gpu_present` False; no Vulkan probe | same | same |
 | **Autostart** | XDG autostart entry, `$APPIMAGE`-aware `Exec=`/`TryExec=`, in-place path healing (§8.4) | same | same |
@@ -103,16 +103,16 @@ A blocking call from the GUI thread is a bug — **logged, not asserted** (an as
 | --- | --- | --- | --- | --- |
 | `keycode_table` | one keysym `LINUX_KEYCODES` table (`ord_fallback=False`) | same | same | ADR 0008 |
 | `default_injection_strategy` | `"type"` | `"clipboard"` (paste) | `"clipboard"` | ADR 0007 |
-| `injection_rungs` | `("type", "paste")` | `("paste", "type")`, no auto fall-through | `("paste", "type")`; `("type",)` when the Clipboard portal is absent | ADR 0007 |
+| `injection_rungs` | `("type", "paste")` | `("paste", "type")`, no auto fall-through; `("type",)` when no paste mechanism exists | `("paste", "type")`; `("type",)` when the Clipboard portal is absent | ADR 0007 |
 | `paste_chord` | `ctrl+v` | `ctrl+v` | `ctrl+v` | ADR 0007 |
 | `default_overrides` / reasons | empty (Restore-defaults inert) | empty | empty | ADR 0007 |
 | `auto_learn_overrides` | `True` (XTEST errors are detectable) | `False` | `False` | ADR 0007 |
-| **`per_app_overrides`** (new; True on win32/darwin) | `True` | `True` | `False` (pane stays editable, with a note) | ADR 0009 |
+| **`per_app_overrides`** (new; True on win32/darwin) | `True` | `True` (`False` for a run whose compositor offers no toplevel protocol) | `False` (pane stays editable, with a note) | ADR 0009 |
 | `stt_runtimes` | `("auto", "cuda", "cpu")` for **both** engines | same | same | ADR 0010 |
 | `gpu_only_engines` | empty | empty | empty | ADR 0010, #28 |
 | `show_runtime_combo` | `True` | `True` | `True` | ADR 0010 |
 | `gpu_pack_available` | `True` — one surface, two editions (§6.2) | same | same | ADR 0010 |
-| **`permission`** (was `permission_preflight`) | `None` | `PermissionPreflight(name="portal", …)` — one value covering both grants | same as Portal | ADR 0008/0012 |
+| **`permission`** (was `permission_preflight`) | `None` | `PermissionPreflight(name="portal", …)` — one value covering the grants the run's mechanisms need (shortcut binding always; RemoteDesktop session where typing/paste ride it) | same as Portal | ADR 0008/0012 |
 | `autostart_label` | `"Start at login"` | same | same | ADR 0011 |
 | `app_identity_placeholder` | `org.mozilla.firefox` | same | same | ADR 0009 |
 | `app_picker` | `True` — installed `.desktop` apps | same | same | ADR 0009 |
@@ -150,7 +150,7 @@ The ladder follows the tier, mirroring ADR 0001's Windows-vs-macOS split. Rung o
 # 4. Hotkey capture and the Linux keycode table (#19 · ADR 0008)
 
 - **Whole**: pynput XRecord, listen-only, press+release, sided modifiers, no grant. Health: the X connection fails loudly with an exception — nothing to poll.
-- **Portal/Reduced**: `org.freedesktop.portal.GlobalShortcuts` — `CreateSession`, `BindShortcuts` (consent), `Activated`/`Deactivated`. **`permission = "portal"` covers both grants** (shortcut binding + RemoteDesktop input session); `permission_granted()` is true only when both are live. **Health check = `ListShortcuts` reporting our shortcut plus a live input session** — never the listener's own flag (ADR 0002's rule). Missing interface → hotkey disarmed + `hotkey-unavailable` fault (§1.3).
+- **Portal/Reduced**: `org.freedesktop.portal.GlobalShortcuts` — `CreateSession`, `BindShortcuts` (consent), `Activated`/`Deactivated`. **`permission = "portal"` covers every grant the run needs** — the shortcut binding always, plus the RemoteDesktop input session where the selected typing/paste mechanism rides it (never on a wlroots compositor using virtual-keyboard + ext-data-control, whose portal ships no RemoteDesktop backend); `permission_granted()` is true only when all of those are live. **Health check = `ListShortcuts` reporting our shortcut plus a live input session** — never the listener's own flag (ADR 0002's rule). Missing interface → hotkey disarmed + `hotkey-unavailable` fault (§1.3).
 - **One keysym `LINUX_KEYCODES` table** for all three tiers (no evdev table); `ord_fallback=False`; captions say "Super". `chord.parse_combo(combo, table=...)` as today.
 - **Wayland defaults differ**: the freedesktop shortcuts grammar needs a keysym, so `<ctrl>+<cmd>` and `<ctrl>+<shift>+<alt>` are unbindable there; the Wayland tiers default to `<ctrl>+<cmd>+space` / `<ctrl>+<cmd>+c`, carried as platform facts, not `Config` literals. A `config.json` written under X11 and opened under Wayland is **not rewritten** — the tier default binds for that run and the copy says why.
 - **The compositor owns the binding.** `preferred_trigger` is a suggestion; Settings shows what `ListShortcuts` reports rather than pretending the text field is authoritative (Hotkeys pane note: "your desktop owns this shortcut").
@@ -164,7 +164,7 @@ The ladder follows the tier, mirroring ADR 0001's Windows-vs-macOS split. Rung o
 
 ## 5.1 Identity — the desktop-file id, on every tier
 
-`AppOverride.process` / History `app_name` hold the **freedesktop desktop-file id**: xdg-shell `app_id` on Wayland; on X11 resolved from `WM_CLASS` (a `.desktop` whose filename stem or `StartupWMClass=` matches, case-insensitive, across `$XDG_DATA_DIRS/applications` and Flatpak exports). Fallback: executable basename (`_NET_WM_PID` on X11, toplevel pid on Plasma Wayland) → `"unknown"`. One key so overrides survive the X11↔Wayland flip on the same machine. `FocusedApp.name()` per tier as in §2.3.
+`AppOverride.process` / History `app_name` hold the **freedesktop desktop-file id**: xdg-shell `app_id` on Wayland; on X11 resolved from `WM_CLASS` (a `.desktop` whose filename stem or `StartupWMClass=` matches, case-insensitive, searched `$XDG_DATA_HOME/applications` (default `~/.local/share/applications`) → each `$XDG_DATA_DIRS` `applications/` → Flatpak exports; first match by id wins, and the picker deduplicates by id). Fallback: executable basename (`_NET_WM_PID` on X11, toplevel pid on Plasma Wayland) → `"unknown"`. One key so overrides survive the X11↔Wayland flip on the same machine. `FocusedApp.name()` per tier as in §2.3.
 
 ## 5.2 The pane bridges to humans
 
@@ -213,11 +213,11 @@ Same wizard page and tray items, engine-keyed; `should_offer` keeps its engine t
 
 ## 8.3 Desktop entry and identity
 
-Nothing installs a desktop entry, so on first run Cadent writes `~/.local/share/applications/com.mikeallisonjs.cadent.desktop` + hicolor 48/128/256 PNGs, idempotently, **skipped where a system-wide entry exists** (AUR stays authoritative). `com.mikeallisonjs.cadent` is the `.desktop` basename, `Icon=`, `StartupWMClass`, and `QGuiApplication::setDesktopFileName()` — the only thing Qt derives the Wayland `app_id` from.
+Nothing installs a desktop entry, so on first run Cadent writes `$XDG_DATA_HOME/applications/com.mikeallisonjs.cadent.desktop` (default `~/.local/share/applications`) + hicolor 48/128/256 PNGs, idempotently, **skipped where a system-wide entry exists** (AUR stays authoritative). `com.mikeallisonjs.cadent` is the `.desktop` basename, `Icon=`, `StartupWMClass`, and `QGuiApplication::setDesktopFileName()` — the only thing Qt derives the Wayland `app_id` from.
 
 ## 8.4 Autostart and SingleInstance
 
-XDG autostart entry, label "Start at login"; `Exec=`/`TryExec=` = `$APPIMAGE` where set else `sys.executable` (an AppImage's `sys.executable` is an ephemeral `/tmp/.mount_*`); `TryExec` disables a deleted tarball/moved AppImage at login; a stale `Exec=` is **rewritten in place** by the adapter. SingleInstance = darwin's `flock`, duplicated (§2.3).
+XDG autostart entry, label "Start at login"; `Exec=`/`TryExec=` = the absolute path read from the `APPIMAGE` env var at write time (desktop entries expand no variables) where set, else `sys.executable` (an AppImage's `sys.executable` is an ephemeral `/tmp/.mount_*`); `TryExec` disables a deleted tarball/moved AppImage at login; a stale `Exec=` is **rewritten in place** by the adapter. SingleInstance = darwin's `flock`, duplicated (§2.3).
 
 ## 8.5 `LOAD_BEARING["linux"]` and the excluded-on-purpose twin
 
@@ -302,8 +302,8 @@ Manual/HITL after the port lands; every portal, X11 and compositor behaviour liv
 
 1. **Whole — bare Super and launchers.** Hold Ctrl then Super on Plasma-X11 and GNOME-X11: does a launcher pop? If so, XTEST-inject a harmless keysym mid-chord (the Windows mask-key trick in another namespace) — not a design change.
 2. **Whole — XTEST scratch-keycode typing** across layouts (US, a non-Latin layout, characters outside the layout) and the state-gate suppression during an actual Ctrl+V paste (the posted chord must not re-enter the chord machine).
-3. **Portal — GlobalShortcuts on Plasma, SteamOS desktop, Sway/Hyprland**: bind dialog, `Activated`/`Deactivated` press+release, `ListShortcuts` health, unbind-in-compositor → banner; `xdg-desktop-portal` restart → one silent recovery on the restore token, then an honest dead state.
-4. **Portal — typing mechanism per compositor**: `zwp_virtual_keyboard_v1` on wlroots (unicode, no dialog), RemoteDesktop keysym on KWin/SteamOS; paste via `ext-data-control` (KWin, wlroots).
+3. **Portal — GlobalShortcuts on Plasma, SteamOS desktop and Hyprland** (the wlroots compositor whose portal ships it; stock Sway is the *negative* case in item 6): bind dialog, `Activated`/`Deactivated` press+release, `ListShortcuts` health, unbind-in-compositor → banner; `xdg-desktop-portal` restart → one silent recovery on the restore token, then an honest dead state.
+4. **Portal — typing mechanism per compositor**: `zwp_virtual_keyboard_v1` on wlroots (unicode, no dialog), RemoteDesktop keysym on KWin/SteamOS; paste via `ext-data-control` (KWin, wlroots); on Hyprland confirm `permission_granted()` needs only the shortcut grant and no RemoteDesktop dialog ever appears; identity via `wlr-foreign-toplevel-management` there and `plasma-window-management` on KWin.
 5. **Reduced — GNOME Wayland**: RemoteDesktop keysym typing; Clipboard portal riding the same session (`RequestClipboard` before `Start`); an older backend without it → `("type",)` and the copy says so; `FocusedApp.name()` = `"unknown"`; tray-less footer + AppIndicator row, then install the extension and confirm the icon appears mid-session.
 6. **Portal-grant flows** (Portal + Reduced): first-run wizard step raises the dialogs (one or two, compositor-dependent), denial leaves the button enabled with no retry, `permission-needed` vs `hotkey-unavailable` never both (test on stock Sway for the latter), token survives "Back it up and start fresh".
 7. **The known suspects for overrides** — terminals binding Ctrl+Shift+V (Konsole, GNOME Terminal, Alacritty, kitty, foot), Electron apps, browsers: sweep before authoring any seed rows; earned overrides get hand-written reasons.

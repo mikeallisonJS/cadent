@@ -2,6 +2,10 @@
 
 Ticket: #13 (part of #11) · Date: 2026-08-16
 
+> **Research snapshot.** Findings as of the date above; the decisions that
+> followed supersede this doc where they differ — see ADR 0009 (`app_picker` is True — installed apps), ADR 0012 (Wayland *does* have a permission surface: `request_permission()`), ADR 0013 (transport is jeepney, not `QStyleHints`), ADR 0014 (no LayerShellQt overlay and no XWayland fallback in v1). Read the ADRs
+> and `docs/specs/m6-linux-port-spec.md` for what ships.
+
 Scope: GNOME (Wayland and X11 sessions), KDE Plasma (Wayland and X11), and
 SteamOS desktop mode. SteamOS desktop mode *is* KDE Plasma ([Steam Deck
 FAQ](https://www.steamdeck.com/en/faq)), and since SteamOS 3.8.10 the desktop
@@ -174,7 +178,7 @@ primary (or compositor-chosen) output is the honest Wayland behaviour.
 | --- | --- | --- |
 | GNOME X11 / Plasma X11 (incl. SteamOS X11 fallback) | **Possible** | Current code as-is: EWMH `_NET_WM_STATE_ABOVE`, real `setGeometry`, X11 input shaping all work. |
 | Plasma Wayland / SteamOS | **Conditional** | Layer-shell via LayerShellQt (binding work + explicit empty input region). |
-| GNOME Wayland | **Impossible natively.** Conditional fallback: run the whole app on XWayland (`QT_QPA_PLATFORM=xcb`), which restores X11 semantics; stacking above native Wayland windows is then compositor-managed and not guaranteed. |
+| GNOME Wayland | **Impossible natively** | Conditional fallback: run the whole app on XWayland (`QT_QPA_PLATFORM=xcb`), which restores X11 semantics; stacking above native Wayland windows is then compositor-managed and not guaranteed. |
 
 ## 4. Focused-app identity and window rect
 

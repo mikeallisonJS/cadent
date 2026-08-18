@@ -108,8 +108,8 @@ For the spec's `Capabilities` / `suggest_model` table this is one new branch, ga
 - First pass, varied lengths, warm-up clip outside the set; `repeat_median_s` on the 9.3 s clip
   matched its first-pass time within noise on every Parakeet row (0.31–0.42 s), confirming the
   CPU EP has no plan-reuse cliff (#137's finding holds on x86).
-- n=10 per row; p95 interpolates between the 9th and 10th sample — read it as "what a
-  40–57 s dictation costs".
+- n=10 per row; p95 is the nearest-rank estimate (`times[int(0.95 * (n - 1))]`, the 9th
+  ordered sample at n=10) — read it as "what a 40–57 s dictation costs".
 - Latency only. WER is `bench_parakeet.py --wer` on real speech (2.87 % v2 vs 6.26 %
   distil-small.en, from #72) and does not depend on the CPU.
 

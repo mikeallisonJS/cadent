@@ -195,7 +195,7 @@ def bench(engine_name: str, model: str, device: str, folder: Path,
         "max_s": round(times[-1], 3),
         "repeat_median_s": round(repeat[len(repeat) // 2], 3),
         "rss_mb": round((rss_after - rss_before) / 1e6),
-        "per_clip": [(round(len(c) / 16000, 1), round(t, 3)) for c, (t, _) in zip(clips, first)],
+        "per_clip": [(round(len(c) / 16000, 1), round(t, 3)) for c, (t, _) in zip(clips, first, strict=True)],
         "text": first[3][1],
     }
 
@@ -227,6 +227,7 @@ def main() -> None:
         return
 
     results = []
+    failed: list[str] = []
     for engine_name, model, device in CONFIGS:
         if args.only and args.only not in f"{engine_name}/{model}":
             continue
@@ -240,6 +241,7 @@ def main() -> None:
         if out.returncode != 0:
             print(f"FAILED: {engine_name}/{model}/{device}\n{out.stderr[-2000:]}",
                   file=sys.stderr)
+            failed.append(f"{engine_name}/{model}/{device}")
             continue
         results.append(json.loads(out.stdout.strip().splitlines()[-1]))
         print(f"done: {engine_name} {model} {device}", file=sys.stderr)
@@ -254,6 +256,10 @@ def main() -> None:
     for r in results:
         print(f"\n[{r['model']}] per clip (audio s, latency s): {r['per_clip']}")
         print(f"[{r['model']}] {r['text']}")
+    if failed:
+        # A partial table must not read as a finished benchmark.
+        print(f"\n{len(failed)} row(s) FAILED: {', '.join(failed)}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

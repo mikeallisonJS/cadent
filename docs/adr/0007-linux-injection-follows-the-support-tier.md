@@ -29,10 +29,15 @@ Windows versus macOS.
   RemoteDesktop session** (`RequestClipboard` before `Start`; `SetSelection`;
   `SelectionOwnerChanged` as the counter) — which is what gives GNOME its paste
   rung. Ctrl+V and "Type it" ride the same typing mechanism.
-- Where the Clipboard portal is absent at runtime (an older portal backend),
-  Reduced **drops the paste rung for that run** — rungs `("type",)` — and the
-  copy says why. Same tier, one fewer rung; not a fourth tier and never a
-  forced XWayland fallback.
+- Where no paste mechanism exists at runtime — no `ext-data-control-v1` and
+  no Clipboard portal (an older portal backend) — **either Wayland tier drops
+  the paste rung for that run**: rungs `("type",)`, and the copy says why.
+  Typing is then the run's only rung, not a fall-through: the no-automatic
+  paste→type rule governs a ladder that *has* a paste rung, and "Type it"
+  stays the explicit override where paste exists. Same tier, one fewer rung;
+  not a fourth tier and never a forced XWayland fallback. Reduced is the tier
+  most likely to hit this (GNOME has no `ext-data-control`); Portal hits it
+  only on a compositor offering neither.
 - A wlroots compositor with neither the virtual-keyboard global nor a
   RemoteDesktop backend is unsupported.
 

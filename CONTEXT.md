@@ -127,8 +127,9 @@ shipped chord, type-first with paste fallback, auto-learn, the windowed
 overlay, per-app overrides, no permission. **Portal** (Wayland on Plasma,
 wlroots, SteamOS desktop) is the loop intact but portal-shaped: a
 keysym-bearing default chord, paste-first with no auto-learn, overrides keyed
-on the desktop-file id, a portal grant as the permission preflight — and no
-overlay in v1 (ADR 0014; a layer-shell pill is a follow-on effort). **Reduced**
+on the desktop-file id (read through the compositor's toplevel protocol —
+KWin's or wlroots'; a run with neither drops overrides), a portal grant as
+the permission preflight — and no overlay in v1 (ADR 0014; a layer-shell pill is a follow-on effort). **Reduced**
 (GNOME Wayland, run natively — never forced under XWayland) is the same
 paste-first portal ladder — the Clipboard portal rides the RemoteDesktop
 session that already types — with no overlay and no per-app overrides
@@ -146,7 +147,9 @@ _Avoid_: compatibility level, X11 mode / Wayland mode, degraded mode
 The one OS grant Cadent cannot work without — Accessibility on darwin, the
 portal grant on Linux's Wayland tiers, none on Windows or Linux X11
 (`Capabilities.permission`, which carries both the name and the words each
-surface renders; ADR 0012). Surfaced three times since #148, never as a
+surface renders; ADR 0012). One value on Linux even where the desktop asks
+twice: the shortcut binding always, plus the RemoteDesktop input session only
+where the run's typing/paste mechanism rides it (ADR 0008). Surfaced three times since #148, never as a
 prompt: a wizard step, a persistent Settings banner that clears itself the
 moment the grant lands, and the `permission-needed` tray fault for when
 neither window is open. None of them gates anything — the wizard's Next stays

@@ -5,16 +5,21 @@ before it (ADR 0007): **Whole** taps XRecord through pynput — press and releas
 sided modifiers, no permission at all — and **Portal** and **Reduced** bind
 `org.freedesktop.portal.GlobalShortcuts` and listen for `Activated` /
 `Deactivated`. Raw `/dev/input` capture, which would fill every seam on every
-compositor, is **not shipped in v1 and not hidden as a fallback**. Decided in
-#19, on the Linux porting map (#11). Mirrors ADR 0002, which settled the same
+compositor, is **not shipped in v1 and not hidden as a fallback**. Decided
+in #19, on the Linux porting map (#11). Mirrors ADR 0002, which settled the same
 question — what one grant do we ask for, and what is the honest health check —
 for macOS.
 
 - **`permission_preflight` is `None` on Whole and `"portal"` on the Wayland
-  tiers.** One value, two grants: the shortcut binding and the RemoteDesktop
-  input session ADR 0007 needs. `permission_granted()` is true only when both
-  are live, because a user holding one without the other has a dead loop and
-  has earned the banner.
+  tiers.** One value, up to two grants: the shortcut binding always, and the
+  RemoteDesktop input session **when the mechanisms ADR 0007 selected need
+  it** — KWin, SteamOS and GNOME type and paste through that session; a
+  wlroots compositor typing via `zwp_virtual_keyboard_v1` and pasting via
+  `ext-data-control-v1` never asks for it (Hyprland's portal ships
+  GlobalShortcuts and no RemoteDesktop backend, and must not fault forever
+  on a session it cannot open). `permission_granted()` is true only when
+  every grant the run's mechanisms need is live, because a user holding one
+  without another has a dead loop and has earned the banner.
 - **The honest health check is never the listener's own flag** — ADR 0002's
   rule, transplanted. On Whole there is no grant to poll and the X connection
   fails loudly, with an exception. On the Wayland tiers a user who unbinds

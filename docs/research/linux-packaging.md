@@ -2,6 +2,10 @@
 
 Ticket: #15 · Date: 2026-08-16
 
+> **Research snapshot.** Findings as of the date above; the decisions that
+> followed supersede this doc where they differ — see ADR 0011 (`ubuntu-24.04` / glibc 2.39, not `ubuntu-22.04` — those runners are scheduled for deprecation from 2026-09-17; the AppImage path is written resolved; user entries go to `$XDG_DATA_HOME/applications`), ADR 0007–0008 (no evdev/uinput in v1). Read the ADRs
+> and `docs/specs/m6-linux-port-spec.md` for what ships.
+
 Question: for the PyInstaller-onedir Qt tray app (global input capture, synthetic
 typing, mic access, optional GPU), how do AppImage, Flatpak, AUR/native and a
 plain tarball fit Arch, CachyOS, SteamOS desktop mode and Ubuntu — and what

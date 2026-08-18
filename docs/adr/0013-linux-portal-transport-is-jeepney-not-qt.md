@@ -13,7 +13,7 @@ Decided in #27 on the Linux porting map (#11).
 - **The transport is `jeepney`**, pure Python, gated
   `sys_platform == 'linux'` in `pyproject.toml`. It speaks the socket directly,
   so it adds no native library to the bundle and no `LOAD_BEARING["linux"]`
-  row (ADR 0011). Its `threading.DBusRouter` is the shape the seams already
+  row (ADR 0011). Its `jeepney.io.threading.DBusRouter` is the shape the seams already
   promise: one connection, **one receive thread (`cadent-portal`)**, blocking
   `send_and_get_reply()` from any worker, signals delivered as filter queues.
 - **One connection, owned by the Linux platform module, injected into every

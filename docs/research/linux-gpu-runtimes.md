@@ -1,6 +1,10 @@
 # Linux GPU and runtime research: speech CUDA, cleanup Vulkan, hardware probes (research, 2026-08-16)
 
 Ticket: #14 (wayfinder research, part of #11). Ground rules inherited from CONTEXT.md ▸ Runtime:
+
+> **Research snapshot.** Findings as of the date above; the decisions that
+> followed supersede this doc where they differ — see ADR 0010 (Parakeet *does* get a CUDA rung via a second pack edition; the preload is `RTLD_LOCAL`, not `RTLD_GLOBAL`). Read the ADRs
+> and `docs/specs/m6-linux-port-spec.md` for what ships.
 construction proves nothing (#38), landed rungs are read off the runtime and never inferred
 (#137), and a ladder that cannot tell accelerators apart must not name one (#155). Everything
 below was checked against primary sources on 2026-08-16; wheel contents were inspected by

@@ -3,6 +3,10 @@
 Ticket: #12 (Linux porting map #11 — input research)
 Date: 2026-08-16
 
+> **Research snapshot.** Findings as of the date above; the decisions that
+> followed supersede this doc where they differ — see ADR 0007 (injection ladder), ADR 0008 (hotkey capture; the Hyprland / stock-Sway permission split), ADR 0009 (identity), ADR 0012 (permission surface). Read the ADRs
+> and `docs/specs/m6-linux-port-spec.md` for what ships.
+
 ## TL;DR
 
 X11 fills all three seams today with no permission model at all: **XRecord** for a

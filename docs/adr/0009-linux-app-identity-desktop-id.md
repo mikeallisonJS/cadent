@@ -5,9 +5,13 @@
 freedesktop desktop-file id** — the xdg-shell `app_id` on Wayland
 (`org.mozilla.firefox`, `org.kde.konsole`), and on X11 the same id resolved
 from `WM_CLASS` (a `.desktop` file whose filename stem or `StartupWMClass=`
-matches the class, case-insensitively, across `$XDG_DATA_DIRS/applications`
-and the Flatpak exports). When no `.desktop` file resolves, the executable
-basename (via `_NET_WM_PID` on X11, the toplevel's pid on Plasma Wayland);
+matches the class, case-insensitively, across `$XDG_DATA_HOME/applications`
+— default `~/.local/share/applications` — then each `$XDG_DATA_DIRS`
+entry's `applications/`, then the Flatpak exports; first match by desktop-file
+id wins, so a user-installed entry shadows the system one, and the picker
+deduplicates by id the same way). When no `.desktop` file resolves, the
+executable basename (via `_NET_WM_PID` on X11, the toplevel's pid on Wayland
+where the protocol carries one);
 then the shared `"unknown"` sentinel. History's `app_name` stores the same
 identity, matching stays case-insensitive, and the Linux shipped override list
 is empty (ADR 0007). Decided in #21, on the Linux porting map (#11).
@@ -33,13 +37,17 @@ Readability is the pane's job, not the store's, so:
   lookup: a history row for a closed app still reads "Firefox". Raw identity
   otherwise.
 - **`app_identity_placeholder` is `org.mozilla.firefox`.**
-- **`FocusedApp.name()` follows the tier**: Whole reads it from X11, Portal
-  from plasma-window-management (KDE-only protocol, accepted in #17), Reduced
-  returns `"unknown"` — GNOME Wayland exposes no focused-window identity to
-  third parties.
+- **`FocusedApp.name()` follows the tier**: Whole reads it from X11; Portal
+  from the compositor's own toplevel protocol — `plasma-window-management`
+  on KWin/SteamOS, `wlr-foreign-toplevel-management-unstable-v1` (`app_id`
+  + `activated`) on the wlroots family — probed at startup; Reduced returns
+  `"unknown"` — GNOME Wayland exposes no focused-window identity to third
+  parties. A Portal compositor offering neither protocol returns `"unknown"`
+  too, and the run carries `per_app_overrides=False` with the same note as
+  Reduced: the tier's name is not a promise its compositor can keep.
 - **A new `Capabilities.per_app_overrides: bool`** carries the tier's promise
-  as a platform fact — False on Reduced, True elsewhere, True on Windows and
-  macOS. The overrides pane stays **editable** where it is False (config is
+  as a platform fact — False on Reduced (and on a Portal run with no toplevel
+  protocol), True elsewhere, True on Windows and macOS. The overrides pane stays **editable** where it is False (config is
   per-machine; a Plasma-X11 session or a future shell extension uses the same
   rows) and shows a one-line note that overrides and auto-learn do not apply
   in this session; that copy belongs to the support-tier wording ticket

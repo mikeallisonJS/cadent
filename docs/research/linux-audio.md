@@ -2,6 +2,10 @@
 
 Ticket: #16 (part of #11) · Date: 2026-08-16
 
+> **Research snapshot.** Findings as of the date above; the decisions that
+> followed supersede this doc where they differ — see #24's resolution / spec §7–§8 (the bundle excludes `libasound.so.2`). Read the ADRs
+> and `docs/specs/m6-linux-port-spec.md` for what ships.
+
 Question: does sounddevice/PortAudio (16 kHz mono float32 capture, `cadent/audio.py`)
 behave across the Linux targets, where PipeWire is now the norm? Which host API does
 it land on, what do default-device and device-disappearance look like, is there any

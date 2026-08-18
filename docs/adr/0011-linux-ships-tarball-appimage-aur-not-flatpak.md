@@ -45,7 +45,9 @@ overtaken by events: those runners begin deprecation on 2026-09-17.
 and an AppImage have no install step, which means no launcher entry, no menu
 icon, and — on Wayland — a window whose `app_id` matches nothing installed.
 On first run Cadent writes
-`~/.local/share/applications/com.mikeallisonjs.cadent.desktop` and the
+`$XDG_DATA_HOME/applications/com.mikeallisonjs.cadent.desktop` (default
+`~/.local/share/applications`; `$XDG_DATA_DIRS` is a search path, never a
+write target) and the
 hicolor 48/128/256 PNGs, idempotently, and **skips it where a system-wide
 entry already exists** so the AUR package stays authoritative. The same
 reverse-DNS id is the `.desktop` basename, the `Icon=` name,
@@ -53,10 +55,12 @@ reverse-DNS id is the `.desktop` basename, the `Icon=` name,
 only thing Qt derives a Wayland `app_id` from, and the identity ADR 0009
 already picked for every *other* app applied to ourselves.
 
-**Autostart heals its own path.** The XDG entry's `Exec=` is
-`$APPIMAGE` where set and `sys.executable` otherwise, because inside an
-AppImage `sys.executable` is an ephemeral `/tmp/.mount_*` path that dies with
-the process. `TryExec=` carries the same path, so the autostart spec's own
+**Autostart heals its own path.** The XDG entry's `Exec=` is the
+**absolute path read from the `APPIMAGE` environment variable at write time**
+where set and `sys.executable` otherwise — written resolved, because desktop
+entries expand no variables — since inside an AppImage `sys.executable` is an
+ephemeral `/tmp/.mount_*` path that dies with the process. `TryExec=` carries
+the same path, so the autostart spec's own
 rule disables a deleted tarball or a moved AppImage at login instead of
 erroring; and where the entry exists with a stale `Exec=`, the adapter
 rewrites it in place — the checkbox said on, so it stays on and points at the
