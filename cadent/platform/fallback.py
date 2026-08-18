@@ -90,6 +90,12 @@ class NullHotkeyTap:
     def stop(self) -> None:
         pass
 
+    def bound_shortcuts(self):
+        return None    # the hook sees the whole keyboard; nobody else binds
+
+    def available(self) -> bool:
+        return True
+
 
 class NullHardware:
     def cuda_total_memory(self) -> float | None:

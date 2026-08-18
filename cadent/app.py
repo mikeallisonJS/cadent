@@ -187,6 +187,7 @@ class CadentApp:
         self._start_permission_poll()
         self.overlay.set_cleanup(self.config.cleanup_mode)
         self.ptt = self._make_ptt()
+        self._check_hotkey_available()
 
         if self._needs_setup():
             # Dictation is disabled until setup finishes, and the tray carries
@@ -792,6 +793,14 @@ class CadentApp:
         self._permission_timer.timeout.connect(self._poll_permission)
         self._permission_timer.start()
         self._poll_permission()
+
+    def _check_hotkey_available(self) -> None:
+        """A desktop with no way to hear a global hotkey (spec M6 §1.3): the
+        hotkey stays disarmed and the tray says so. Decided at startup, and
+        never raised together with `permission-needed` — the platform's
+        `permission_granted()` answers True where nothing could be granted."""
+        self.tray.set_fault("hotkey-unavailable",
+                            not self.platform.hotkey_tap.available())
 
     def _poll_permission(self) -> None:
         granted = self.platform.focused_app.permission_granted()

@@ -644,6 +644,13 @@ class SetupWizard(QDialog):
             "and speak.", "RowDesc"))
         if not self.state.model_downloaded:
             self._add(label(NO_MODEL_YET, "RowHint"))
+        # The support-tier line (M6 §9.4), only where the platform names a
+        # permission preflight — the Wayland tiers, whose promise is not the
+        # whole loop. Whole (like Windows) says nothing here.
+        caps = platform.current().capabilities
+        if caps.permission is not None and caps.support_tier_summary:
+            self.tier_line = label(caps.support_tier_summary, "RowHint")
+            self._add(self.tier_line)
         self.body_layout.addStretch()
         return None
 

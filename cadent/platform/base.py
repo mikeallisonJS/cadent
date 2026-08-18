@@ -230,6 +230,21 @@ class HotkeyTap(Protocol):
 
     def stop(self) -> None: ...
 
+    def bound_shortcuts(self) -> Mapping[str, str] | None:
+        """Where the *desktop* owns the binding (Linux's Wayland tiers), the
+        chords it actually bound — {"dictate": "Ctrl+Super+Space", ...} as
+        the compositor describes them — so the Hotkeys pane can show them
+        instead of pretending the text field is authoritative (ADR 0008).
+        None wherever the hook sees the raw keyboard (win32, darwin, X11)."""
+        ...
+
+    def available(self) -> bool:
+        """Can a hotkey be armed on this desktop at all? False only where
+        the interface that would carry it is missing (a Wayland compositor
+        whose portal ships no GlobalShortcuts) — the app then shows the
+        `hotkey-unavailable` fault. True everywhere else."""
+        ...
+
 
 class HardwareProbe(Protocol):
     def cuda_total_memory(self) -> float | None: ...

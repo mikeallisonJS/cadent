@@ -87,6 +87,20 @@ class OverridesPane(QWidget):
             "How Cadent inserts text into each app. Overrides Cadent "
             "ships, ones it learned, and ones you wrote all look alike here.",
             "RowDesc"))
+        # Session notes (M6 §5.2, §9.4): the pane stays editable — config is
+        # per-machine, another session on it uses the same rows — with one
+        # line saying what does not apply here. Both read Capabilities.
+        caps = platform.current().capabilities
+        notes = []
+        if not caps.per_app_overrides:
+            notes.append("Overrides and auto-learn aren't applied in this session: "
+                         "your desktop doesn't tell Cadent which app is focused.")
+        if "paste" not in caps.injection_rungs:
+            notes.append("Pasting isn't available in this session, so every app "
+                         "is typed into.")
+        self.session_note = label(" ".join(notes), "RowHint")
+        self.session_note.setVisible(bool(notes))
+        layout.addWidget(self.session_note)
 
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["App", "Strategy", ""])

@@ -586,6 +586,12 @@ class DarwinHotkeyTap:
             self._listener.stop()
             self._listener = None
 
+    def bound_shortcuts(self):
+        return None    # the hook sees the whole keyboard; nobody else binds
+
+    def available(self) -> bool:
+        return True
+
 
 # ---- the assembled platform ---------------------------------------------------
 

@@ -286,6 +286,12 @@ class Win32HotkeyTap:
             self._listener.stop()
             self._listener = None
 
+    def bound_shortcuts(self):
+        return None    # the hook sees the whole keyboard; nobody else binds
+
+    def available(self) -> bool:
+        return True
+
 
 # ---- hardware probes (formerly hardware.py + gpu_pack.py) --------------------
 

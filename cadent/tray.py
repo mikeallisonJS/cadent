@@ -37,6 +37,10 @@ FAULTS: dict[str, str] = {
     # darwin, the portal grant on Linux's Wayland tiers. Set by the app's
     # grant poll, so it clears with no window open.
     "permission-needed": "permission needed",
+    # The desktop offers no way to hear a global hotkey at all (a Wayland
+    # compositor whose portal has no GlobalShortcuts backend). Never set
+    # together with permission-needed (spec M6 §9.3).
+    "hotkey-unavailable": "hotkey unavailable on this desktop",
 }
 
 # Offers clear when they are *seen*. Without that split an NVIDIA user who

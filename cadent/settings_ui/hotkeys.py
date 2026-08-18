@@ -57,6 +57,14 @@ class HotkeysPane(QWidget):
                 hint=settings.restart_hint("min_hold_ms")),
         ]))
         layout.addWidget(self.error)
+        # Where the desktop owns the binding (Linux's Wayland tiers, ADR
+        # 0008), the compositor's own description of what it bound is the
+        # truth and the text field is a suggestion. Read from the tap, never
+        # from `sys.platform`; None everywhere the hook sees the raw keyboard.
+        self.desktop_note = label("", "RowHint")
+        self.desktop_note.setVisible(False)
+        layout.addWidget(self.desktop_note)
+        self.refresh_desktop_binding()
         layout.addStretch()
 
         # Writes fire on **field commit** — focus-out or Enter — never per
@@ -75,6 +83,28 @@ class HotkeysPane(QWidget):
         self.min_hold.valueChanged.connect(
             lambda value: ctx.set("min_hold_ms", value, coalesce=True))
         self.min_hold.editingFinished.connect(ctx.store.flush)
+
+    def refresh_desktop_binding(self) -> None:
+        """The "your desktop owns this shortcut" note (spec §4, §9.4)."""
+        plat = platform.current()
+        bound = plat.hotkey_tap.bound_shortcuts()
+        if bound is None:
+            self.desktop_note.setVisible(False)
+            return
+        caps = plat.capabilities
+        parts = ["Your desktop owns this shortcut: it decides what is bound, "
+                 "and the fields above are a suggestion."]
+        if bound:
+            described = ", ".join(f"{name}: {desc}" for name, desc in bound.items() if desc)
+            if described:
+                parts.append(f"Bound now — {described}.")
+        else:
+            parts.append(f"Nothing is bound yet. Chords with no key (like "
+                         f"{caps.default_combo.rsplit('+', 1)[0]}) can't be bound "
+                         f"here, so the defaults {caps.default_combo} and "
+                         f"{caps.default_cleanup_combo} are used for this session.")
+        self.desktop_note.setText(" ".join(parts))
+        self.desktop_note.setVisible(True)
 
     # ---- validity ---------------------------------------------------------
 

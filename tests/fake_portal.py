@@ -31,6 +31,10 @@ class FakeBus:
         self.subscriptions: dict[int, tuple[MatchRule, Callable[[Message], None]]] = {}
         self._next = 1
         self.unsubscribed: list[int] = []
+        # When set, every Request-bearing call gets this Response code right
+        # after its reply unless a scripted handler already answered — keeps
+        # tests from sitting through the bounded 5 s wait.
+        self.auto_response: int | None = None
 
     # ---- the Bus contract ---------------------------------------------------
 
@@ -44,7 +48,14 @@ class FakeBus:
             raise scripted
         if callable(scripted):
             scripted = scripted(msg)
-        return _reply(msg, tuple(scripted))
+        reply = _reply(msg, tuple(scripted))
+        if self.auto_response is not None:
+            for arg in msg.body:
+                if isinstance(arg, dict) and "handle_token" in arg:
+                    self.respond(portal.request_path(self.unique_name,
+                                                     arg["handle_token"][1]),
+                                 self.auto_response)
+        return reply
 
     def send(self, msg: Message) -> None:
         self.sent.append(msg)

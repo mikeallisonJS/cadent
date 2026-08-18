@@ -670,3 +670,9 @@ class X11HotkeyTap:
         if self._listener is not None:
             self._listener.stop()
             self._listener = None
+
+    def bound_shortcuts(self):
+        return None    # the hook sees the whole keyboard; nobody else binds
+
+    def available(self) -> bool:
+        return True

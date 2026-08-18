@@ -148,7 +148,8 @@ class PortalConnection:
         from jeepney.io.blocking import open_dbus_connection
 
         try:
-            conn = open_dbus_connection(bus="SESSION")
+            # FDs on: the Clipboard portal hands selection data over unix fds.
+            conn = open_dbus_connection(bus="SESSION", enable_fds=True)
         except Exception as exc:  # no DBUS_SESSION_BUS_ADDRESS, refused, ...
             raise PortalUnavailable(f"session bus unavailable: {exc}") from exc
         return cls(conn)

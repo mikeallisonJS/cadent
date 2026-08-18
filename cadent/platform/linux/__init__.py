@@ -238,18 +238,24 @@ def create() -> Platform:
     from .. import fallback
 
     info = detect()
-    caps = capabilities_for(info)
     bus = open_portal_connection()
-    log.info("Linux support tier: %s (%s)", info.tier, caps.support_tier_summary)
     stub = fallback.create()
+    desktop = stub.desktop
     if info.tier == WHOLE:
+        caps = capabilities_for(info)
         keyboard, clipboard, focused_app, hotkey_tap = _whole_adapters()
     else:
-        # The Wayland fills arrive with #35/#36; fallback-filled until then.
-        keyboard, clipboard, focused_app, hotkey_tap = (
-            stub.keyboard, stub.clipboard, stub.focused_app, stub.hotkey_tap)
-    # Hardware (#38), autostart / single instance / desktop (#39, #40) are
-    # fallback-filled until their tickets land. Each replaces one line here.
+        run = _wayland_run(info, bus)
+        caps = capabilities_for(info, paste_available=run.paste_available,
+                                per_app_overrides=(info.tier == PORTAL
+                                                   and run.per_app_overrides))
+        keyboard, clipboard = run.keyboard, run.clipboard
+        focused_app, hotkey_tap = run.focused_app, run.tap
+        desktop = _WaylandDesktop(stub.desktop, run)
+        run.warm()
+    log.info("Linux support tier: %s (%s)", info.tier, caps.support_tier_summary)
+    # Hardware (#38), autostart / single instance / the rest of DesktopEnv
+    # (#39, #40) are fallback-filled until their tickets land.
     plat = Platform(
         capabilities=caps,
         keyboard=keyboard,
@@ -259,7 +265,7 @@ def create() -> Platform:
         hardware=stub.hardware,
         autostart=stub.autostart,
         single_instance=stub.single_instance,
-        desktop=stub.desktop,
+        desktop=desktop,
     )
     if bus is not None:
         bus.arm_gui_guard()
@@ -276,6 +282,43 @@ def _whole_adapters():
     index = DesktopIndex()
     return (X11Keyboard(gate), X11Clipboard(), X11FocusedApp(index),
             X11HotkeyTap(gate))
+
+
+def _wayland_run(info: SessionInfo, bus):
+    """The Wayland tiers (#35, #36): probe the compositor and the portals
+    once and assemble the seams around what is there."""
+    from ... import config
+    from .desktopfiles import DesktopIndex
+    from .wayland import WaylandClient, WaylandError
+    from .wayland_tiers import TokenStore, WaylandRun
+
+    client = None
+    try:
+        client = WaylandClient.connect()
+    except WaylandError as exc:
+        log.warning("no Wayland connection (%s); compositor protocols off", exc)
+    except Exception:
+        log.warning("Wayland connection failed", exc_info=True)
+    return WaylandRun(bus, tier=info.tier,
+                      default_combo=WAYLAND_DEFAULT_COMBO,
+                      default_cleanup_combo=WAYLAND_DEFAULT_CLEANUP_COMBO,
+                      token_store=TokenStore(config.DATA_DIR / "portal-tokens.json"),
+                      desktop_index=DesktopIndex(), wayland_client=client)
+
+
+class _WaylandDesktop:
+    """The fallback DesktopEnv with `request_permission` wired to the run
+    (ADR 0012); the portal-backed reads arrive with #39."""
+
+    def __init__(self, inner, run) -> None:
+        self._inner = inner
+        self._run = run
+
+    def request_permission(self) -> None:
+        self._run.request_permission()
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
 
 
 __all__ = [

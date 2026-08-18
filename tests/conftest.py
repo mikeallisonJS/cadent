@@ -425,6 +425,12 @@ class FakeHotkeyTap:
         self.on_event = None
         self.stops += 1
 
+    def bound_shortcuts(self):
+        return None
+
+    def available(self):
+        return True
+
     def press(self, keycode, injected=False):
         self.on_event(keycode, True, injected)
 
