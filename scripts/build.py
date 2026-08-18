@@ -88,7 +88,7 @@ LOAD_BEARING = {
         "*/platforms/libqxcb.so",
         "*/platforms/libqwayland-generic.so",
         "*/wayland-shell-integration/libxdg-shell.so",
-        "*/libportaudio.so*",                          # staged by build_linux.py
+        "*/libportaudio.so*",                          # staged by packaging/cadent.spec
     ],
 }
 

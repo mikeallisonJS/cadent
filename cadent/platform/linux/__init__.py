@@ -46,7 +46,6 @@ KNOWN_DESKTOPS: Mapping[str, str] = {
     "mate": "MATE",
     "lxqt": "LXQt",
     "budgie": "Budgie",
-    "budgie:gnome": "Budgie",
     "cosmic": "COSMIC",
     "deepin": "Deepin",
     "pantheon": "Pantheon",

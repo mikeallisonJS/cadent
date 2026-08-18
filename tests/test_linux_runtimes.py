@@ -108,7 +108,11 @@ def test_the_cuda13_edition_gathers_its_files_across_wheels(tmp_path, monkeypatc
         "nvidia-cublas": ["libcublas.so.13", "libcublasLt.so.13"],
         "nvidia-cufft": ["libcufft.so.12"],
         "nvidia-curand": ["libcurand.so.10"],
-        "nvidia-cudnn-cu13": ["libcudnn.so.9", "libcudnn_graph.so.9", "libcudnn_ops.so.9"],
+        "nvidia-cudnn-cu13": ["libcudnn.so.9", "libcudnn_graph.so.9", "libcudnn_ops.so.9",
+                              "libcudnn_engines_precompiled.so.9",
+                              "libcudnn_engines_runtime_compiled.so.9",
+                              "libcudnn_heuristic.so.9", "libcudnn_adv.so.9",
+                              "libcudnn_cnn.so.9"],
     })
     gpu_pack.install_pack(tmp_path, fetch=fetch, edition=gpu_packs.CUDA13_LINUX)
     dest = tmp_path / "cuda13"

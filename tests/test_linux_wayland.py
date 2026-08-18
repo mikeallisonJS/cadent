@@ -567,10 +567,12 @@ def test_the_hotkeys_pane_names_the_wayland_defaults_when_nothing_is_bound(
         qt_app, tmp_path, monkeypatch):
     plat = linux_platform("wayland", "GNOME")
     plat.hotkey_tap.bound_shortcuts = lambda: {}
+    plat.hotkey_tap.substituted = {"dictate": "<ctrl>+<cmd>+space"}
     monkeypatch.setattr(platform_pkg, "_current", plat)
     win = settings_window(tmp_path)
     try:
         assert "<ctrl>+<cmd>+space" in win.hotkeys.desktop_note.text()
+        assert "Nothing is bound yet" in win.hotkeys.desktop_note.text()
     finally:
         win.close()
 

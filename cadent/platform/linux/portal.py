@@ -342,13 +342,32 @@ def unwrap_variants(value: Any) -> Any:
     want plain Python. Recursive, because portal results nest (`shortcuts`
     is `a(sa{sv})`)."""
     if isinstance(value, tuple) and len(value) == 2 and isinstance(value[0], str) \
-            and _looks_like_signature(value[0]):
+            and _looks_like_signature(value[0]) and _fits(value[0], value[1]):
         return unwrap_variants(value[1])
     if isinstance(value, dict):
         return {k: unwrap_variants(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return type(value)(unwrap_variants(v) for v in value)
     return value
+
+
+def _fits(sig: str, value: Any) -> bool:
+    """Does `value` have the shape `sig` says? Guards against a plain
+    (id, dict) pair — a shortcut id like "tab" is signature-shaped text."""
+    head = sig[0]
+    if head in "sog":
+        return isinstance(value, str) and len(sig) == 1
+    if head in "ynqiuxth":
+        return isinstance(value, int) and not isinstance(value, bool) and len(sig) == 1
+    if head == "b":
+        return isinstance(value, bool) and len(sig) == 1
+    if head == "d":
+        return isinstance(value, (int, float)) and len(sig) == 1
+    if head == "a":
+        return isinstance(value, (list, dict, bytes))
+    if head in "(v":
+        return isinstance(value, tuple)
+    return False
 
 
 def _looks_like_signature(text: str) -> bool:
@@ -382,25 +401,36 @@ def send_request(bus: Bus, build: Callable[[str], Message],
     token = tokens.next()
     expected = request_path(bus.unique_name, token)
     pending = PendingResponse()
+    subscription: list[int] = []
 
     def on_response(msg: Message) -> None:
         code, results = msg.body
         pending._complete(code, results)
+        # One Response per Request: drop the match rather than leak an
+        # AddMatch per call (ListShortcuts runs every few seconds).
+        for tok in subscription:
+            try:
+                bus.unsubscribe(tok)
+            except PortalError:
+                pass
+        subscription.clear()
 
     def rule_for(path: str) -> MatchRule:
         return MatchRule(type="signal", interface=REQUEST_IFACE,
                          member="Response", path=path)
 
-    sub = bus.subscribe(rule_for(expected), on_response)
+    subscription.append(bus.subscribe(rule_for(expected), on_response))
     try:
         reply = bus.send_and_get_reply(build(token), timeout=timeout)
     except PortalError:
-        bus.unsubscribe(sub)
+        for tok in subscription:
+            bus.unsubscribe(tok)
         raise
     handle = reply.body[0] if reply.body else expected
     if handle != expected and not pending.done:
-        bus.unsubscribe(sub)
-        bus.subscribe(rule_for(handle), on_response)
+        for tok in subscription:
+            bus.unsubscribe(tok)
+        subscription[:] = [bus.subscribe(rule_for(handle), on_response)]
     pending.handle = handle  # type: ignore[attr-defined]
     return pending
 

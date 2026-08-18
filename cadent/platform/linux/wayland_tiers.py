@@ -168,6 +168,7 @@ class GlobalShortcutsTap:
         self._last_health = 0.0
         self._refreshing = False
         self._recovered_once = False
+        self._rebind_after_recovery = False
         self.substituted: dict[str, str] = {}           # id → the default that replaced it
         self.interface_present = bus is not None and \
             interface_version(bus, portal.GLOBAL_SHORTCUTS_IFACE) is not None
@@ -204,8 +205,10 @@ class GlobalShortcutsTap:
         self._subs = []
 
     def bound_shortcuts(self) -> Mapping[str, str] | None:
+        if not self.interface_present:
+            return None     # nobody binds here; the tray says hotkey-unavailable
         with self._lock:
-            return dict(self._bound) if self.interface_present else {}
+            return dict(self._bound)
 
     def available(self) -> bool:
         """False on a desktop whose portal has no GlobalShortcuts backend
@@ -271,6 +274,11 @@ class GlobalShortcutsTap:
             self._on_shortcuts_changed))
         self._subs.append(watch_session_closed(self._bus, handle, self._on_closed))
         self._list_shortcuts()
+        if self._rebind_after_recovery and not self._bound:
+            # A recovered session whose bindings did not carry over: ask
+            # once more (a good grant answers without a dialog).
+            self._rebind_after_recovery = False
+            self.request_bind()
 
     def _list_shortcuts(self) -> None:
         if self._bus is None or self._session is None:
@@ -347,6 +355,7 @@ class GlobalShortcutsTap:
     def _on_closed(self) -> None:
         """A portal restart: re-create the session once, then admit defeat."""
         with self._lock:
+            was_bound = bool(self._bound)
             self._session = None
             self._bound = {}
             if self._recovered_once:
@@ -354,6 +363,7 @@ class GlobalShortcutsTap:
                             "for this run")
                 return
             self._recovered_once = True
+            self._rebind_after_recovery = was_bound
         log.info("GlobalShortcuts session closed; re-creating once")
         self._worker(self._open_session)
 

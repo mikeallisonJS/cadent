@@ -48,7 +48,14 @@ CUDA13_LINUX = GpuPackEdition(
     engine="parakeet",
     files=("libcudart.so.13", "libnvJitLink.so.13", "libnvrtc.so.13",
            "libnvrtc-builtins.so.13*", "libcublasLt.so.13", "libcublas.so.13",
-           "libcufft.so.12", "libcurand.so.10", "libcudnn*.so.9*"),
+           "libcufft.so.12", "libcurand.so.10",
+           # cuDNN 9: the sub-libraries first, in their own dependency order,
+           # then the front door — RTLD_LOCAL resolves DT_NEEDED only against
+           # what is already loaded.
+           "libcudnn_graph.so.9*", "libcudnn_ops.so.9*",
+           "libcudnn_engines_precompiled.so.9*", "libcudnn_engines_runtime_compiled.so.9*",
+           "libcudnn_heuristic.so.9*", "libcudnn_adv.so.9*", "libcudnn_cnn.so.9*",
+           "libcudnn.so.9*"),
     sources=(("nvidia-cuda-runtime", "13."), ("nvidia-nvjitlink", "13."),
              ("nvidia-cuda-nvrtc", "13."), ("nvidia-cublas", "13."),
              ("nvidia-cufft", "12."), ("nvidia-curand", "10."),

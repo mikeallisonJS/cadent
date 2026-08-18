@@ -99,9 +99,13 @@ class HotkeysPane(QWidget):
             if described:
                 parts.append(f"Bound now — {described}.")
         else:
-            parts.append(f"Nothing is bound yet. Chords with no key (like "
-                         f"{caps.default_combo.rsplit('+', 1)[0]}) can't be bound "
-                         f"here, so the defaults {caps.default_combo} and "
+            parts.append("Nothing is bound yet.")
+        substituted = getattr(plat.hotkey_tap, "substituted", None) or {}
+        if substituted:
+            # A modifier-only chord (the X11/Windows default) has no keysym for
+            # the shortcuts grammar; the tier default binds for this run.
+            parts.append(f"Chords with no key can't be bound here, so the "
+                         f"defaults {caps.default_combo} and "
                          f"{caps.default_cleanup_combo} are used for this session.")
         self.desktop_note.setText(" ".join(parts))
         self.desktop_note.setVisible(True)
