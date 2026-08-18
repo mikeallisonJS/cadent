@@ -410,6 +410,7 @@ class RemoteDesktopSession:
                 lambda tok: portal.remote_desktop_create_session(tok, session_token),
                 self._tokens).wait()
             if not created.ok:
+                self._reset_starting()
                 return
             handle = created.results.get("session_handle") or \
                 session_path(self._bus.unique_name, session_token)
@@ -419,6 +420,7 @@ class RemoteDesktopSession:
                     handle, tok, restore_token=self._store.get(self.TOKEN_KEY)),
                 self._tokens).wait()
             if not selected.ok:
+                self._reset_starting()
                 return
             if self._want_clipboard and self.clipboard_interface_present:
                 try:
@@ -441,6 +443,10 @@ class RemoteDesktopSession:
             log.warning("RemoteDesktop session setup failed", exc_info=True)
             with self._lock:
                 self._starting = False
+
+    def _reset_starting(self) -> None:
+        with self._lock:
+            self._starting = False
 
     def _on_started(self, response: PendingResponse) -> None:
         with self._lock:
@@ -585,12 +591,18 @@ class PortalClipboard:
                 self._text = None
 
     def _on_transfer(self, msg) -> None:
+        """Signal on the portal thread. The write needs bounded replies,
+        which only that thread dispatches — so the work moves to a helper
+        thread rather than deadlocking on itself."""
         try:
             handle, mime, serial = msg.body[0], msg.body[1], int(msg.body[2])
         except (IndexError, TypeError, ValueError):
             return
         if handle != self._session.handle or self._bus is None:
             return
+        _spawn(lambda: self._write_selection(handle, mime, serial))
+
+    def _write_selection(self, handle: str, mime: str, serial: int) -> None:
         text = self._text
         ok = False
         try:

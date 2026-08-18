@@ -624,3 +624,32 @@ def test_the_done_page_carries_the_tier_line_only_on_the_wayland_tiers(
             win._completed = True
             win.close()
             win.deleteLater()
+
+
+# ---- review fixes: no bounded call from the portal thread; re-ask after a refusal
+
+def test_selection_transfer_writes_off_the_portal_thread(monkeypatch):
+    """`SelectionTransfer` arrives on the portal thread, whose bounded replies
+    are dispatched by that same thread — the write must not block it."""
+    from cadent.platform.linux import wayland_tiers as wt
+
+    bus = bus_with_portal(portal.REMOTE_DESKTOP_IFACE, portal.CLIPBOARD_IFACE)
+    session = RemoteDesktopSession(bus, portal.RequestTokens(), TokenStore(
+        __import__("pathlib").Path("unused")), want_clipboard=True, worker=inline)
+    session.handle, session.live = "/s/rd", True
+    clip = wt.PortalClipboard(bus, session)
+    spawned = []
+    monkeypatch.setattr(wt, "_spawn", lambda fn: spawned.append(fn))
+    bus.emit(portal.PORTAL_PATH, portal.CLIPBOARD_IFACE, "SelectionTransfer", "osu",
+             ("/s/rd", "text/plain;charset=utf-8", 7))
+    assert len(spawned) == 1 and bus.calls("SelectionWrite") == []
+
+
+def test_a_refused_create_session_leaves_request_start_re_askable(tmp_path):
+    bus = bus_with_portal(portal.REMOTE_DESKTOP_IFACE)          # auto Response 2
+    session = RemoteDesktopSession(bus, portal.RequestTokens(), TokenStore(tmp_path / "t"),
+                                   want_clipboard=False, worker=inline)
+    session.request_start()
+    assert len(bus.calls("CreateSession")) == 1
+    session.request_start()                                       # not stuck
+    assert len(bus.calls("CreateSession")) == 2
