@@ -16,6 +16,7 @@ from .base import (
     Clipboard,
     DesktopEnv,
     FocusedApp,
+    GpuPackEdition,
     HardwareProbe,
     HotkeyTap,
     KeyboardOutput,
@@ -27,7 +28,7 @@ from .base import (
 
 __all__ = [
     "Autostart", "Capabilities", "Clipboard", "DesktopEnv", "FocusedApp",
-    "HardwareProbe", "HotkeyTap", "KeyboardOutput", "KeycodeTable",
+    "GpuPackEdition", "HardwareProbe", "HotkeyTap", "KeyboardOutput", "KeycodeTable",
     "PermissionPreflight", "Platform",
     "SingleInstance", "current",
 ]

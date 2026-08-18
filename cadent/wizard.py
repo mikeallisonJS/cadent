@@ -275,11 +275,17 @@ class SetupWizard(QDialog):
                     answer.append(False)
                     return
                 detected = hardware.detect_cached()
+                engine = settings.engine_for_model(
+                    hardware.suggest_for_this_machine().model)
+                edition = gpu_pack.edition_for(engine)
                 eligible = hardware.should_offer_gpu_page(
                     detected.nvidia_driver, detected.vram_gb,
-                    gpu_pack.pack_installed(),
-                    settings.engine_for_model(
-                        hardware.suggest_for_this_machine().model))
+                    gpu_pack.pack_installed(engine=engine), engine,
+                    edition_exists=edition is not None,
+                    # A pre-580 driver cannot run the CUDA-13 edition: no
+                    # page — the Speech pane's row says to update instead.
+                    driver_ok=edition is not None and gpu_pack.driver_supports(
+                        edition, detected.cuda_driver_version))
             except Exception:
                 log.debug("hardware probe failed", exc_info=True)
                 eligible = False
@@ -531,10 +537,15 @@ class SetupWizard(QDialog):
 
     def _build_gpu(self) -> QWidget | None:
         """Offered **before** model choice, because accepting it changes the
-        recommendation."""
+        recommendation. The page discloses the edition and size for the
+        engine the recommendation is about to name (ADR 0010)."""
+        engine = settings.engine_for_model(hardware.suggest_for_this_machine().model)
+        edition = gpu_pack.edition_for(engine)
+        what = ("CUDA libraries" if edition is not None and edition.key != "cublas12"
+                else "cuBLAS libraries")
         self._add(label(
             f"This PC has an NVIDIA GPU. Cadent can download NVIDIA's "
-            f"cuBLAS libraries ({gpu_pack.DOWNLOAD_SIZE}, one-time, from PyPI) "
+            f"{what} ({gpu_pack.download_size(engine)}, one-time, from PyPI) "
             "to transcribe on the GPU instead of the CPU. This is the only "
             "network activity Cadent performs besides the speech model.",
             "RowDesc"))

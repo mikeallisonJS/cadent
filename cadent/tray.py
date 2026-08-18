@@ -213,6 +213,7 @@ class Tray:
         self.gpu_separator.setVisible(False)
         self.gpu_action = QAction(
             f"Download GPU support pack ({gpu_pack.DOWNLOAD_SIZE})")
+        self._gpu_action_size = gpu_pack.DOWNLOAD_SIZE
         self.gpu_action.setVisible(False)
         self.gpu_action.triggered.connect(on_gpu_download)
         if self._gpu_pack_available:
@@ -263,9 +264,14 @@ class Tray:
             self.ledger.set_activity(f"downloading the {what}, {percent}%")
         self.refresh()
 
-    def offer_gpu_pack(self) -> None:
+    def offer_gpu_pack(self, size: str | None = None) -> None:
         if not self._gpu_pack_available:
             return      # nothing to download here; never amber for it either
+        if size and size != self._gpu_action_size:
+            # Edition-keyed (ADR 0010): the item names the size of the pack
+            # the running engine would actually load.
+            self._gpu_action_size = size
+            self.gpu_action.setText(f"Download GPU support pack ({size})")
         self.ledger.raise_offer("gpu-pack")
         self._show_gpu_offer(True)
         self.refresh()

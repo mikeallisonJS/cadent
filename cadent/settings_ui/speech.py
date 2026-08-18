@@ -194,7 +194,26 @@ class SpeechPane(QWidget):
         self.advanced_card = card(rows)
         self.advanced_card.setVisible(False)
         layout.addWidget(self.advanced_card)
+        # The GPU-pack driver row (ADR 0010): where the running engine's pack
+        # edition needs a newer NVIDIA driver than this machine has, the CUDA
+        # rung is not on offer and the line says what to do about it. Reads
+        # the cached probe (never blocks) and the platform's edition table.
+        self.pack_hint = label("", "RowHint")
+        self.pack_hint.setVisible(False)
+        layout.addWidget(self.pack_hint)
+        self.refresh_pack_hint()
         layout.addStretch()
+
+    def refresh_pack_hint(self) -> None:
+        from .. import gpu_pack
+
+        detected = hardware.detect_safely()
+        hint = None
+        if detected.nvidia_driver:
+            hint = gpu_pack.driver_hint(self.ctx.config.stt_engine,
+                                        detected.cuda_driver_version)
+        self.pack_hint.setText(hint or "")
+        self.pack_hint.setVisible(bool(hint))
 
     # ---- the speech list ---------------------------------------------------
 

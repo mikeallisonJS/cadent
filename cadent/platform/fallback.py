@@ -18,6 +18,7 @@ from pathlib import Path
 
 from .. import config
 from .base import Capabilities, Platform
+from .gpu_packs import WIN32_EDITIONS
 from .keycodes import WIN32_KEYCODES
 
 log = logging.getLogger(__name__)
@@ -113,6 +114,9 @@ class NullHardware:
     def metal_gpu_present(self) -> bool:
         return False
 
+    def cuda_driver_version(self) -> int | None:
+        return None
+
 
 class NullAutostart:
     def run_command(self) -> str:
@@ -180,6 +184,8 @@ CAPABILITIES = Capabilities(
     gpu_only_engines=frozenset({"parakeet"}),
     show_runtime_combo=True,
     gpu_pack_available=True,
+    gpu_pack_editions=WIN32_EDITIONS,
+    parakeet_cpu_floor=None,
     permission=None,
     autostart_label="Start with Windows",
     app_identity_placeholder="app.exe",

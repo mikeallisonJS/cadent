@@ -69,6 +69,26 @@ class PermissionPreflight:
 
 
 @dataclass(frozen=True)
+class GpuPackEdition:
+    """One downloadable GPU support pack (ADR 0010): the CUDA userspace an
+    engine dlopens, extracted from PyPI `nvidia-*` wheels into the data dir.
+    One surface (wizard page, tray item), engine-keyed editions — Windows
+    ships the cuBLAS-12 pair for faster-whisper; Linux adds the CUDA-13
+    stack for Parakeet."""
+
+    key: str                                    # "cublas12" / "cuda13"
+    engine: str                                 # the engine it serves
+    files: tuple[str, ...]                      # basenames (globs allowed) to extract
+    sources: tuple[tuple[str, str], ...]        # (PyPI package, version or "13." prefix)
+    wheel_tag: str                              # "win_amd64" / "manylinux"
+    size: str                                   # disclosed download size
+    subdir: str                                 # under CUDA_DIR ("" = the dir itself)
+    activation: str                             # "path" (PATH prepend) / "preload" (RTLD_LOCAL)
+    min_driver_cuda: int | None = None          # cuDriverGetVersion() floor, e.g. 13000
+    driver_hint: str | None = None              # the row when the driver is too old
+
+
+@dataclass(frozen=True)
 class Capabilities:
     """Platform *facts* (spec §1.3). If a surface needs a platform fact not
     listed here, it goes in this table, not in an `if sys.platform` branch.
@@ -91,6 +111,15 @@ class Capabilities:
     gpu_only_engines: frozenset[str]
     show_runtime_combo: bool
     gpu_pack_available: bool                 # wizard page + tray items exist at all
+    # The editions this platform can download, by engine (ADR 0010); empty
+    # where the build ships its acceleration (darwin). `gpu_pack_available`
+    # is the same fact as "this is non-empty", kept for the surfaces.
+    gpu_pack_editions: Mapping[str, GpuPackEdition]
+    # The CPU floor at which Parakeet v2 is recommended over the Whisper rows
+    # on a machine with no usable NVIDIA GPU: (physical cores, RAM GB), or
+    # None where that branch was never benched (win32 today). Linux carries
+    # (4, 8.0) from docs/research/linux-parakeet-cpu-bench.md.
+    parakeet_cpu_floor: tuple[int, float] | None
     # None, or the grant this OS needs (Accessibility on darwin, the portal
     # grant on Linux's Wayland tiers) with the words its surfaces render.
     # Gating stays a truthiness check; the app polls `permission_granted()`.
@@ -263,6 +292,12 @@ class HardwareProbe(Protocol):
     def metal_gpu_present(self) -> bool:
         """A Metal GPU the llama.cpp build can offload to — true on every
         Apple Silicon Mac, false everywhere else (#146)."""
+        ...
+
+    def cuda_driver_version(self) -> int | None:
+        """`cuDriverGetVersion()` off the NVIDIA driver (13000 = CUDA 13.0),
+        or None with no driver. Gates the CUDA-13 pack edition (ADR 0010:
+        R580+ drivers only)."""
         ...
 
 

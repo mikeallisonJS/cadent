@@ -21,6 +21,7 @@ from pathlib import Path
 
 from .. import config
 from .base import Capabilities, Platform
+from .gpu_packs import WIN32_EDITIONS
 from .keycodes import WIN32_KEYCODES
 
 log = logging.getLogger(__name__)
@@ -356,6 +357,18 @@ class Win32Hardware:
     def metal_gpu_present(self) -> bool:
         return False
 
+    def cuda_driver_version(self) -> int | None:
+        """`cuDriverGetVersion()` off nvcuda — informational on Windows (the
+        CUDA-13 Parakeet edition is a Linux pack, spec: Scope)."""
+        try:
+            cuda = ctypes.WinDLL("nvcuda.dll")
+            version = ctypes.c_int()
+            if cuda.cuDriverGetVersion(ctypes.byref(version)) != 0:
+                return None
+            return int(version.value)
+        except Exception:
+            return None
+
 
 # ---- autostart (formerly cadent/autostart.py) -----------------------------
 
@@ -646,6 +659,8 @@ CAPABILITIES = Capabilities(
     gpu_only_engines=frozenset({"parakeet"}),
     show_runtime_combo=True,
     gpu_pack_available=True,
+    gpu_pack_editions=WIN32_EDITIONS,
+    parakeet_cpu_floor=None,
     permission=None,
     autostart_label="Start with Windows",
     app_identity_placeholder="app.exe",

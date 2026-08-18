@@ -23,6 +23,7 @@ from collections.abc import Mapping
 
 from ..base import Capabilities, PermissionPreflight, Platform
 from ..fallback import CAPABILITIES as FALLBACK_CAPABILITIES
+from ..gpu_packs import LINUX_EDITIONS
 from ..keycodes import LINUX_KEYCODES
 
 log = logging.getLogger(__name__)
@@ -175,6 +176,9 @@ def capabilities_for(info: SessionInfo, *,
         gpu_only_engines=frozenset(),
         show_runtime_combo=True,
         gpu_pack_available=True,
+        gpu_pack_editions=LINUX_EDITIONS,
+        # Bench: 0.66 s median at 4+ cores / 8 GB (linux-parakeet-cpu-bench).
+        parakeet_cpu_floor=(4, 8.0),
         autostart_label="Start at login",
         app_identity_placeholder="org.mozilla.firefox",
         app_picker=True,
@@ -254,15 +258,17 @@ def create() -> Platform:
         desktop = _WaylandDesktop(stub.desktop, run)
         run.warm()
     log.info("Linux support tier: %s (%s)", info.tier, caps.support_tier_summary)
-    # Hardware (#38), autostart / single instance / the rest of DesktopEnv
-    # (#39, #40) are fallback-filled until their tickets land.
+    from .hardware import LinuxHardware
+
+    # Autostart / single instance / the rest of DesktopEnv (#39, #40) are
+    # fallback-filled until their tickets land.
     plat = Platform(
         capabilities=caps,
         keyboard=keyboard,
         clipboard=clipboard,
         focused_app=focused_app,
         hotkey_tap=hotkey_tap,
-        hardware=stub.hardware,
+        hardware=LinuxHardware(),
         autostart=stub.autostart,
         single_instance=stub.single_instance,
         desktop=desktop,

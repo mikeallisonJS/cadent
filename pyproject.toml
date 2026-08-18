@@ -22,6 +22,12 @@ dependencies = [
     # Windows-only: the distribution ships win_amd64 wheels exclusively;
     # other platforms get plain `onnxruntime` via the override below.
     "onnxruntime-directml>=1.24; sys_platform == 'win32'",
+    # Linux ships the CUDA build of onnxruntime (~250 MB against 19 MB) so
+    # Parakeet's CUDA provider exists at all (ADR 0010); the CUDA-13
+    # userspace it dlopens comes from the GPU support pack, never the wheel.
+    # Same import package as the CPU build; the override below keeps plain
+    # `onnxruntime` off Linux the way it is kept off Windows.
+    "onnxruntime-gpu>=1.28; sys_platform == 'linux'",
     "sounddevice>=0.5",
     "numpy>=1.26",
     "PySide6>=6.8",
@@ -87,9 +93,10 @@ include = ["cadent*"]
 # `onnxruntime` package. Both installed means whichever lands last wins, which
 # is not something to leave to resolution order. The marker keeps plain
 # `onnxruntime` off Windows only, so exactly one distribution provides the
-# module there; every other platform relies on plain `onnxruntime` (>=1.28
-# ships macOS arm64 wheels) and must keep it.
-override-dependencies = ["onnxruntime>=1.28; sys_platform != 'win32'"]
+# module there — and `onnxruntime-gpu` off Linux (ADR 0010) — so exactly one
+# distribution provides the module on each; macOS relies on plain
+# `onnxruntime` (>=1.28 ships arm64 wheels) and must keep it.
+override-dependencies = ["onnxruntime>=1.28; sys_platform == 'darwin'"]
 
 # The Vulkan build, not the CPU one (#116). Same version, same wheel tag, one
 # extra backend DLL — ggml-vulkan.dll — and cleanup runs on whatever GPU the
@@ -107,11 +114,13 @@ url = "https://abetlen.github.io/llama-cpp-python/whl/vulkan"
 explicit = true
 
 [tool.uv.sources]
-# Windows-only: the Vulkan index ships no macOS wheels, and PyPI has no macOS
-# wheel either (see docs/research/macos-dev-environment.md §2b), so macOS falls
-# through to the PyPI sdist and builds from source (~60 s, Metal enabled by
-# default).
-llama-cpp-python = { index = "llama-cpp-python-vulkan", marker = "sys_platform == 'win32'" }
+# Windows and Linux: the Vulkan index ships win_amd64 and manylinux x86_64
+# wheels at the same version (ADR 0010 — the distro's `libvulkan.so.1` is the
+# only system need; missing, the import fails and the ladder lands `cpu`).
+# No macOS wheel there or on PyPI (see docs/research/macos-dev-environment.md
+# §2b), so macOS falls through to the PyPI sdist and builds from source
+# (~60 s, Metal enabled by default).
+llama-cpp-python = { index = "llama-cpp-python-vulkan", marker = "sys_platform == 'win32' or sys_platform == 'linux'" }
 
 # Changelog fragments (#168): every PR that touches code ships one in
 # changelog.d/, named <issue>.<type>.md. Only the three types below render

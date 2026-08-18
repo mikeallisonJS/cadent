@@ -106,11 +106,13 @@ _WEIGHT_PATTERNS = ["*.int8.onnx", "nemo128.onnx", "config.json", "vocab.txt"]
 
 # Which ONNX Runtime providers to try, in order, for each configured device.
 # DirectML leads `auto` because it measured ~3x faster than CUDA on int8 and
-# costs nothing to ship; CUDA is reachable only on an explicit ask, because
-# choosing it means a ~1.9 GB support pack that does not exist yet (research
-# §3). Every list ends on CPU except the one that asked for CPU.
+# costs nothing to ship; on Windows CUDA is reachable only on an explicit ask
+# (a Windows CUDA pack for Parakeet is out of scope), and the platform's
+# runtime column filters it out of `auto` there — while on Linux, where the
+# CUDA-13 pack edition exists (ADR 0010) and DirectML does not, `auto` walks
+# CUDA then CPU. Every list ends on CPU except the one that asked for CPU.
 _PROVIDER_LADDERS: dict[str, tuple[str, ...]] = {
-    "auto": ("DmlExecutionProvider", "CPUExecutionProvider"),
+    "auto": ("DmlExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"),
     "directml": ("DmlExecutionProvider", "CPUExecutionProvider"),
     "cuda": ("CUDAExecutionProvider", "CPUExecutionProvider"),
     "cpu": ("CPUExecutionProvider",),
@@ -144,6 +146,9 @@ def _provider_ladder(device: str, runtimes: tuple[str, ...]) -> tuple[str, ...]:
     rung either: that EP crashes on Parakeet (microsoft/onnxruntime#26355).
     CPU always closes the ladder."""
     ladder = _PROVIDER_LADDERS.get(device, _PROVIDER_LADDERS["auto"])
+    if device == "auto" and "directml" in runtimes:
+        # Windows: DirectML is `auto`'s GPU rung; CUDA stays an explicit ask.
+        ladder = tuple(p for p in ladder if p != "CUDAExecutionProvider")
     return tuple(p for p in ladder
                  if p == "CPUExecutionProvider" or _RUNTIME_NAMES[p] in runtimes)
 

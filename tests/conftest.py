@@ -440,8 +440,9 @@ class FakeHotkeyTap:
 
 class FakeHardwareProbe:
     def __init__(self, *, vram=None, dx12=False, cpu="Test CPU", driver=False,
-                 metal=False):
+                 metal=False, driver_cuda=None):
         self.vram = vram
+        self.driver_cuda = driver_cuda
         self.dx12 = dx12
         self.cpu = cpu
         self.driver = driver
@@ -463,6 +464,9 @@ class FakeHardwareProbe:
 
     def metal_gpu_present(self):
         return self.metal
+
+    def cuda_driver_version(self):
+        return self.driver_cuda
 
 
 class FakeDesktop:
@@ -573,6 +577,7 @@ def pin_darwin_ui_platform(monkeypatch, *, granted=True, running=None,
         gpu_only_engines=frozenset(),
         show_runtime_combo=False,
         gpu_pack_available=False,
+        gpu_pack_editions={},
         permission=PermissionPreflight(
             name="accessibility",
             banner="Cadent needs the Accessibility permission to type "

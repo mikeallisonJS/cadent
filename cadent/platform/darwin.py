@@ -524,6 +524,9 @@ class DarwinHardware:
     def metal_gpu_present(self) -> bool:
         return True
 
+    def cuda_driver_version(self) -> int | None:
+        return None
+
 
 # ---- hotkey tap: pynput listen-only (spec §3) ---------------------------------
 
@@ -619,6 +622,8 @@ def create() -> Platform:
             gpu_only_engines=frozenset(),
             show_runtime_combo=False,
             gpu_pack_available=False,
+            gpu_pack_editions={},
+            parakeet_cpu_floor=None,
             permission=ACCESSIBILITY,
             app_identity_placeholder="com.example.app",
             autostart_label="Start at login",
