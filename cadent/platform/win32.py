@@ -428,6 +428,12 @@ class Win32SingleInstance:
         ctypes.windll.kernel32.CreateMutexW(None, False, _MUTEX_NAME)
         return ctypes.windll.kernel32.GetLastError() != ERROR_ALREADY_EXISTS
 
+    def notify_running(self) -> bool:
+        return False    # a tray icon is always there to click
+
+    def watch(self, on_second_launch) -> None:
+        pass
+
 
 # ---- desktop environment ------------------------------------------------------
 

@@ -239,12 +239,13 @@ def open_portal_connection():
 
 
 def create() -> Platform:
-    from .. import fallback
+    from .desktop import LinuxDesktop
+    from .hardware import LinuxHardware
+    from .session import LinuxAutostart, LinuxSingleInstance
 
     info = detect()
     bus = open_portal_connection()
-    stub = fallback.create()
-    desktop = stub.desktop
+    request_permission = None
     if info.tier == WHOLE:
         caps = capabilities_for(info)
         keyboard, clipboard, focused_app, hotkey_tap = _whole_adapters()
@@ -255,13 +256,9 @@ def create() -> Platform:
                                                    and run.per_app_overrides))
         keyboard, clipboard = run.keyboard, run.clipboard
         focused_app, hotkey_tap = run.focused_app, run.tap
-        desktop = _WaylandDesktop(stub.desktop, run)
+        request_permission = run.request_permission
         run.warm()
     log.info("Linux support tier: %s (%s)", info.tier, caps.support_tier_summary)
-    from .hardware import LinuxHardware
-
-    # Autostart / single instance / the rest of DesktopEnv (#39, #40) are
-    # fallback-filled until their tickets land.
     plat = Platform(
         capabilities=caps,
         keyboard=keyboard,
@@ -269,9 +266,11 @@ def create() -> Platform:
         focused_app=focused_app,
         hotkey_tap=hotkey_tap,
         hardware=LinuxHardware(),
-        autostart=stub.autostart,
-        single_instance=stub.single_instance,
-        desktop=desktop,
+        autostart=LinuxAutostart(),
+        single_instance=LinuxSingleInstance(),
+        # One Settings-portal snapshot for every desktop read (§10.4); the
+        # ink watcher rides the same connection.
+        desktop=LinuxDesktop(bus, info.desktop_key, request_permission),
     )
     if bus is not None:
         bus.arm_gui_guard()
@@ -310,21 +309,6 @@ def _wayland_run(info: SessionInfo, bus):
                       default_cleanup_combo=WAYLAND_DEFAULT_CLEANUP_COMBO,
                       token_store=TokenStore(config.DATA_DIR / "portal-tokens.json"),
                       desktop_index=DesktopIndex(), wayland_client=client)
-
-
-class _WaylandDesktop:
-    """The fallback DesktopEnv with `request_permission` wired to the run
-    (ADR 0012); the portal-backed reads arrive with #39."""
-
-    def __init__(self, inner, run) -> None:
-        self._inner = inner
-        self._run = run
-
-    def request_permission(self) -> None:
-        self._run.request_permission()
-
-    def __getattr__(self, name):
-        return getattr(self._inner, name)
 
 
 __all__ = [

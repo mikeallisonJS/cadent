@@ -34,6 +34,9 @@ def main() -> int:
     from .platform import current
 
     if not current().single_instance.acquire():
+        # A tray-less desktop's second door (M6 §10.2): tell the running
+        # instance to show itself; elsewhere the tray icon is the door.
+        current().single_instance.notify_running()
         print("Cadent is already running.", file=sys.stderr)
         return 1
     _setup_logging()

@@ -18,9 +18,11 @@ from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics
 from PySide6.QtWidgets import (
     QDialog,
+    QFrame,
     QHBoxLayout,
     QListWidget,
     QListWidgetItem,
+    QPushButton,
     QScrollArea,
     QStackedWidget,
     QVBoxLayout,
@@ -120,10 +122,16 @@ class SettingsWindow(QDialog):
     # and the pane stays a detail of it.
     model_download_requested = Signal()
     model_download_cancel_requested = Signal()
+    # The tray-less footer (M6 §10.2): where no system tray hosts the icon,
+    # Pause and Quit live here and the app hears them the same way it hears
+    # the tray menu.
+    pause_requested = Signal(bool)
+    quit_requested = Signal()
 
     def __init__(self, store: ConfigStore, *, tokens: dict,
                  devices: list[str] | None = None, history=None,
                  high_contrast: bool = False, mic_monitor=None,
+                 tray_available: bool = True, paused: bool = False,
                  parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("Root")
@@ -140,7 +148,8 @@ class SettingsWindow(QDialog):
             request_move_overlay=self.move_overlay_requested.emit,
             request_wizard=self.wizard_requested.emit)
 
-        self.general = GeneralPane(self.ctx, high_contrast=high_contrast)
+        self.general = GeneralPane(self.ctx, high_contrast=high_contrast,
+                                   tray_available=tray_available)
         self.hotkeys = HotkeysPane(self.ctx)
         self.speech = SpeechPane(self.ctx)
         self.vocabulary = VocabularyPane(self.ctx)
@@ -220,6 +229,24 @@ class SettingsWindow(QDialog):
         body.addWidget(self.permission_banner)
         self.refresh_permission()
         body.addWidget(self.stack, 1)
+        # Pause and Quit, only where no tray hosts them (M6 §10.2). Runtime
+        # state passed in by the app — never a Capabilities fact.
+        self.footer = QFrame()
+        self.footer.setObjectName("Footer")
+        footer_layout = QHBoxLayout(self.footer)
+        footer_layout.setContentsMargins(int(tokens["sp_4"]), int(tokens["sp_2"]),
+                                         int(tokens["sp_4"]), int(tokens["sp_2"]))
+        self.pause_button = QPushButton("Pause dictation")
+        self.pause_button.setCheckable(True)
+        self.pause_button.setChecked(paused)
+        self.pause_button.toggled.connect(self.pause_requested.emit)
+        self.quit_button = QPushButton("Quit Cadent")
+        self.quit_button.clicked.connect(self.quit_requested.emit)
+        footer_layout.addWidget(self.pause_button)
+        footer_layout.addStretch()
+        footer_layout.addWidget(self.quit_button)
+        self.footer.setVisible(not tray_available)
+        body.addWidget(self.footer)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)

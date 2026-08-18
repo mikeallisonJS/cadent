@@ -71,6 +71,7 @@ class _Bridge(QObject):
     download_progress = Signal(str, object)    # what, Progress (#115)
     download_finished = Signal(str)            # what — however it ended
     tray_ink_changed = Signal()                # the taskbar's colour mode moved
+    second_launch = Signal()                   # another `cadent` was started (M6 §10.2)
 
 
 class CadentApp:
@@ -184,6 +185,10 @@ class CadentApp:
                                               on_error=self.bridge.llm_failed.emit)
 
         self._setup_tray()
+        # A second launch on a tray-less desktop opens Settings (M6 §10.2);
+        # the seam calls back on its own thread, the signal marshals.
+        self.bridge.second_launch.connect(self._on_second_launch)
+        self.platform.single_instance.watch(self.bridge.second_launch.emit)
         self._start_permission_poll()
         self.overlay.set_cleanup(self.config.cleanup_mode)
         self.ptt = self._make_ptt()
@@ -960,13 +965,25 @@ class CadentApp:
 
     # ---- settings ----------------------------------------------------------
 
+    def _on_second_launch(self) -> None:
+        """Without a tray host there is no icon to click, so a second
+        `cadent` is the user asking for the window (M6 §10.2)."""
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            self._show_settings()
+
     def _show_settings(self, pane: str | None = None) -> None:
         if self.settings_window is None or not self.settings_window.isVisible():
             self.settings_window = SettingsWindow(
                 self.store, tokens=self.theme.tokens,
                 devices=self._input_devices(), history=self.history,
                 high_contrast=self.theme.high_contrast,
-                mic_monitor=self.mic_monitor)
+                mic_monitor=self.mic_monitor,
+                # Runtime state, not a fact (M6 §10.2): a host can arrive
+                # mid-session, and the next open of this window sees it.
+                tray_available=QSystemTrayIcon.isSystemTrayAvailable(),
+                paused=self.config.paused)
+            self.settings_window.pause_requested.connect(self._toggle_pause)
+            self.settings_window.quit_requested.connect(self._quit)
             self.settings_window.applied.connect(self._on_setting_applied)
             self.settings_window.theme_requested.connect(self._on_theme_preference)
             self.settings_window.wizard_requested.connect(self._run_wizard)

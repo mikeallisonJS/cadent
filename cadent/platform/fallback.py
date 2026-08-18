@@ -135,6 +135,12 @@ class NullSingleInstance:
     def acquire(self) -> bool:
         return True
 
+    def notify_running(self) -> bool:
+        return False    # a tray icon is always there to click
+
+    def watch(self, on_second_launch) -> None:
+        pass
+
 
 class NullDesktop:
     def open_path(self, path: Path) -> None:

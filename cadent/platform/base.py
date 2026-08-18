@@ -316,6 +316,20 @@ class SingleInstance(Protocol):
         with the process — no stale state to clean up."""
         ...
 
+    def notify_running(self) -> bool:
+        """The *second* launch's move after `acquire()` failed: tell the
+        running instance to show itself. True if delivered. A no-op (False)
+        where a tray icon is always there to click (win32, darwin); Linux
+        signals the holder of the lock, because a tray-less desktop has no
+        other door (spec M6 §10.2)."""
+        ...
+
+    def watch(self, on_second_launch: Callable[[], None]) -> None:
+        """The *first* instance's side: `on_second_launch` fires when another
+        launch called `notify_running()`. On the watcher's own thread; the
+        app marshals. A no-op where nothing notifies."""
+        ...
+
 
 class DesktopEnv(Protocol):
     def open_path(self, path: Path) -> None:

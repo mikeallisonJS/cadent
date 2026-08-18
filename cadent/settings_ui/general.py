@@ -25,8 +25,17 @@ THEME_CHOICES = (("system", "Follow system"), ("light", "Light"), ("dark", "Dark
 # Appearance control and Increase contrast.
 
 
+# The tray-less door's explanation (M6 §10.2): stock GNOME hosts no
+# StatusNotifierItem until an extension is installed. Runtime state passed
+# in, never a Capabilities fact — a host can arrive mid-session.
+NO_TRAY_ROW = ("No system tray found, so Pause and Quit live here. On GNOME, "
+               "the AppIndicator and KStatusNotifierItem Support extension "
+               "adds one.")
+
+
 class GeneralPane(QWidget):
-    def __init__(self, ctx: PaneContext, high_contrast: bool = False) -> None:
+    def __init__(self, ctx: PaneContext, high_contrast: bool = False,
+                 tray_available: bool = True) -> None:
         super().__init__()
         self.ctx = ctx
         self.setObjectName("Pane")
@@ -98,6 +107,10 @@ class GeneralPane(QWidget):
             self.tier_row = row(t, "This session", None,
                                 desc=self._caps.support_tier_summary or "")
             setup_rows.append(self.tier_row)
+        self.tray_row = None
+        if not tray_available:
+            self.tray_row = row(t, "System tray", None, desc=NO_TRAY_ROW)
+            setup_rows.append(self.tray_row)
         layout.addWidget(caps("Setup", t))
         layout.addWidget(card(setup_rows))
 

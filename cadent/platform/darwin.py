@@ -127,6 +127,12 @@ class DarwinSingleInstance:
         self._fd = fd
         return True
 
+    def notify_running(self) -> bool:
+        return False    # a tray icon is always there to click
+
+    def watch(self, on_second_launch) -> None:
+        pass
+
 
 # ---- desktop environment (spec §6.3) ------------------------------------------
 
