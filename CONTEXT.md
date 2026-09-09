@@ -32,6 +32,16 @@ the process (hand-authored or learned) blocks it. A platform fact
 detectable at all.
 _Avoid_: adaptive injection, self-healing overrides
 
+**Hotkey mode**:
+How the dictation chord drives recording. `hold`: record while held, release
+inserts, a sub-minimum-hold release discards. `toggle`: each press flips
+recording. `tap_or_hold` ("Tap or hold" in Settings): one chord, both grips —
+a press that starts recording **latches** if released before the minimum hold
+(a tap) and stops on release otherwise (a hold); any press while latched stops
+on release, so holding always behaves like the held chord. A latched tap is
+never cancelled by other keys; a physical hold still is.
+_Avoid_: hybrid mode, push-to-toggle, PTT
+
 **Speech engine**:
 Which recogniser transcribes — `faster-whisper` (the default; the only one
 that runs well on any PC) or `parakeet`. Nobody picks one: since #111 it is

@@ -26,6 +26,7 @@ class HotkeysPane(QWidget):
         self.mode = QComboBox()
         self.mode.addItem("Hold to dictate", "hold")
         self.mode.addItem("Tap to start / tap to stop", "toggle")
+        self.mode.addItem("Tap or hold", "tap_or_hold")
         self.mode.setCurrentIndex(max(self.mode.findData(ctx.config.hotkey_mode), 0))
         self.min_hold = QSpinBox()
         self.min_hold.setRange(0, 2000)
@@ -47,7 +48,7 @@ class HotkeysPane(QWidget):
                 desc="Hold this and speak; release to insert",
                 hint=settings.restart_hint("hotkey")),
             row(t, "Hotkey mode", self.mode,
-                desc="Whether the key is held or tapped",
+                desc="Held, tapped, or either: a tap latches, a hold releases",
                 hint=settings.restart_hint("hotkey_mode")),
             row(t, "Cleanup hotkey", self.cleanup_hotkey,
                 desc="Tap this to turn cleanup on or off",
