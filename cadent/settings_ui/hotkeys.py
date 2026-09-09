@@ -45,7 +45,7 @@ class HotkeysPane(QWidget):
         layout.addWidget(page_title("Hotkeys"))
         layout.addWidget(card([
             row(t, "Dictation hotkey", self.hotkey,
-                desc="Hold this and speak; release to insert",
+                desc="Tap to start and stop, or hold and release to insert",
                 hint=settings.restart_hint("hotkey")),
             row(t, "Hotkey mode", self.mode,
                 desc="Held, tapped, or either: a tap latches, a hold releases",

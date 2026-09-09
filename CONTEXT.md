@@ -35,7 +35,7 @@ _Avoid_: adaptive injection, self-healing overrides
 **Hotkey mode**:
 How the dictation chord drives recording. `hold`: record while held, release
 inserts, a sub-minimum-hold release discards. `toggle`: each press flips
-recording. `tap_or_hold` ("Tap or hold" in Settings): one chord, both grips —
+recording. `tap_or_hold` ("Tap or hold" in Settings, the default): one chord, both grips —
 a press that starts recording **latches** if released before the minimum hold
 (a tap) and stops on release otherwise (a hold); any press while latched stops
 on release, so holding always behaves like the held chord. A latched tap is

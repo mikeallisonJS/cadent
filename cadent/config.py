@@ -146,7 +146,7 @@ SEED_COMMENTS: dict[str, str] = {
 class Config:
     # Hotkey. Modifier-only chords supported; see chord.py for parsing.
     hotkey: str = "<ctrl>+<cmd>"          # Ctrl + Win
-    hotkey_mode: str = "hold"             # "hold" | "toggle" | "tap_or_hold"
+    hotkey_mode: str = "tap_or_hold"      # "hold" | "toggle" | "tap_or_hold"
     min_hold_ms: int = 200                # hold shorter than this discards the utterance
     paused: bool = False                  # persisted pause state
 

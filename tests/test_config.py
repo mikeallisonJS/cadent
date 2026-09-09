@@ -32,7 +32,7 @@ def test_known_fields_are_read_through():
 
 def test_an_empty_dict_is_all_defaults():
     cfg = loaded({})
-    assert cfg.hotkey_mode == "hold"
+    assert cfg.hotkey_mode == "tap_or_hold"
     assert cfg.paused is False
 
 
@@ -99,7 +99,7 @@ def test_wrong_typed_fields_reset_to_defaults():
     cfg = loaded({"hotkey": 5, "hotkey_mode": "bogus",
                   "max_utterance_seconds": "x", "input_device": 3})
     assert cfg.hotkey == "<ctrl>+<cmd>"
-    assert cfg.hotkey_mode == "hold"
+    assert cfg.hotkey_mode == "tap_or_hold"
     assert cfg.max_utterance_seconds == 120
     assert cfg.input_device is None
 
@@ -108,7 +108,7 @@ def test_every_reset_is_reported_with_what_the_file_said():
     """Under wholesale save the next save quietly repaired these; under delta
     writes it never does, so the pane has to say so (§7.5)."""
     reported = issues({"hotkey_mode": "hodl", "autostart": "yes"})
-    assert reported["hotkey_mode"] == ("hodl", "hold")
+    assert reported["hotkey_mode"] == ("hodl", "tap_or_hold")
     assert reported["autostart"] == ("yes", False)
 
 
