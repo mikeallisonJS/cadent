@@ -5,6 +5,19 @@ and are rendered here by the release PR — see `docs/agents/releases.md`.
 
 <!-- towncrier release notes start -->
 
+## v0.6.0 — 2026-09-11
+
+### Features
+
+- The Windows installer can now be Authenticode-signed, which removes the
+  SmartScreen warning on first launch and is what the Microsoft Store requires
+  before it will accept a build. Signing is off unless credentials are
+  configured, so unsigned builds work exactly as before. ([#51](https://github.com/mikeallisonJS/cadent/issues/51))
+- A new "Tap or hold" hotkey mode: tap the dictation chord to start and tap
+  again to stop, or hold it and release to dictate exactly as in hold mode.
+  It is now the default; "Hold to dictate" and "Tap to start / tap to stop" remain in Settings ▸ Hotkeys. Configs that already store a valid mode keep it. ([#52](https://github.com/mikeallisonJS/cadent/issues/52))
+
+
 ## v0.5.0 — 2026-08-15
 
 ### Features
