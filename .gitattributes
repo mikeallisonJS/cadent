@@ -1,0 +1,4 @@
+# core.autocrlf=true is normal on Windows clones, but a shell script checked
+# out with CRLF fails in Git Bash on its shebang ($'\r': command not found).
+# scripts/store_setup_wizard.sh is run directly by a human, so pin LF.
+*.sh text eol=lf

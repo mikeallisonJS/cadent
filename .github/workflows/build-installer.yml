@@ -1,8 +1,25 @@
 # Build the Windows installer (#48): PyInstaller onedir via scripts/build.py,
 # wrapped by Inno Setup (preinstalled on windows-latest). Runs on version-tag
-# push (v*) and by hand. Unsigned per the M3 charter. scripts/smoke_frozen.py
-# stays a local step — the app's first run downloads models, which a CI runner
-# shouldn't do.
+# push (v*) and by hand. scripts/smoke_frozen.py stays a local step — the app's
+# first run downloads models, which a CI runner shouldn't do.
+#
+# Signing is optional and secret-gated, the same shape as the macOS leg. With
+# no secrets the build is unsigned: it runs, but SmartScreen warns on first
+# launch (the M3 charter's accepted trade) and the Microsoft Store will not
+# take it. Add the six secrets below and the same workflow produces an
+# installer whose payload and wrapper both chain to a Microsoft-trusted root,
+# which is what the Store's MSI/EXE submission path requires:
+#
+#   AZURE_SIGN_TENANT_ID      the Entra tenant holding the signing identity
+#   AZURE_SIGN_CLIENT_ID      app registration with the Code Signing Certificate
+#   AZURE_SIGN_CLIENT_SECRET  Profile Signer role on the signing account
+#   AZURE_SIGN_ENDPOINT       regional URI, e.g. https://eus.codesigning.azure.net/
+#   AZURE_SIGN_ACCOUNT        Artifact Signing account name
+#   AZURE_SIGN_PROFILE        certificate profile name within that account
+#
+# Signing runs twice, on either side of ISCC, because Inno compresses the
+# payload into the installer — signing dist/Cadent afterwards would sign files
+# nobody downloads. See scripts/sign_windows.py.
 
 name: build-installer
 
@@ -25,6 +42,83 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras
 
+      - name: Resolve signing credentials
+        id: signing
+        shell: pwsh
+        env:
+          TENANT_ID: ${{ secrets.AZURE_SIGN_TENANT_ID }}
+          CLIENT_ID: ${{ secrets.AZURE_SIGN_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.AZURE_SIGN_CLIENT_SECRET }}
+          ENDPOINT: ${{ secrets.AZURE_SIGN_ENDPOINT }}
+          ACCOUNT: ${{ secrets.AZURE_SIGN_ACCOUNT }}
+          PROFILE: ${{ secrets.AZURE_SIGN_PROFILE }}
+        run: |
+          # Secrets aren't readable from `if:` expressions, so the decision is
+          # made here once and every later step keys off this output.
+          #
+          # Three states, not two, matching the macOS leg. No secrets at all is
+          # the documented unsigned path. A half-configured set is a mistake,
+          # and falling back there would hand an unsigned installer to somebody
+          # who asked for a signed one — and, worse, to the Store — so it fails
+          # the build while the secrets are still the obvious thing to look at.
+          $values = @($env:TENANT_ID, $env:CLIENT_ID, $env:CLIENT_SECRET,
+                      $env:ENDPOINT, $env:ACCOUNT, $env:PROFILE)
+          $present = @($values | Where-Object { $_ }).Count
+
+          if ($present -eq 0) {
+            Write-Host "No Artifact Signing secrets - building unsigned."
+            "signed=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          if ($present -ne $values.Count) {
+            $absent = $values.Count - $present
+            Write-Host "::error::Artifact Signing needs all six AZURE_SIGN_* secrets - $absent of them are unset."
+            exit 1
+          }
+
+          "signed=true" >> $env:GITHUB_OUTPUT
+
+      - name: Install the Artifact Signing client
+        if: steps.signing.outputs.signed == 'true'
+        id: dlib
+        shell: pwsh
+        env:
+          ENDPOINT: ${{ secrets.AZURE_SIGN_ENDPOINT }}
+          ACCOUNT: ${{ secrets.AZURE_SIGN_ACCOUNT }}
+          PROFILE: ${{ secrets.AZURE_SIGN_PROFILE }}
+        run: |
+          # signtool reaches Azure through a dlib shipped in this package;
+          # there is no standalone installer for it. Fetched as a raw .nupkg
+          # (a zip) and expanded, rather than through nuget.exe or a
+          # marketplace action: the version is ours to pin, the supply chain is
+          # one hop, and it does not care whether the runner image still ships
+          # a NuGet CLI.
+          $version = '1.0.95'
+          $package = "$env:RUNNER_TEMP\signing.zip"
+          $root = "$env:RUNNER_TEMP\signing"
+          Invoke-WebRequest -UseBasicParsing -OutFile $package `
+            "https://api.nuget.org/v3-flatcontainer/microsoft.trusted.signing.client/$version/microsoft.trusted.signing.client.$version.nupkg"
+          Expand-Archive -Path $package -DestinationPath $root -Force
+
+          $dlib = "$root\bin\x64\Azure.CodeSigning.Dlib.dll"
+          if (-not (Test-Path $dlib)) {
+            Write-Host "::error::Artifact Signing dlib not found at $dlib"
+            exit 1
+          }
+
+          # The dlib reads its target from a metadata file, not from flags.
+          # Written to RUNNER_TEMP rather than the workspace so it cannot be
+          # swept into the installer payload by a stray glob.
+          $metadata = "$env:RUNNER_TEMP\signing\metadata.json"
+          @{
+            Endpoint               = $env:ENDPOINT
+            CodeSigningAccountName = $env:ACCOUNT
+            CertificateProfileName = $env:PROFILE
+          } | ConvertTo-Json | Set-Content -Path $metadata -Encoding utf8
+
+          "dlib=$dlib" >> $env:GITHUB_OUTPUT
+          "metadata=$metadata" >> $env:GITHUB_OUTPUT
+
       - name: Build frozen app (PyInstaller onedir)
         run: uv run python scripts/build.py --skip-sync
 
@@ -39,12 +133,112 @@ jobs:
           }
           "version=$version" >> $env:GITHUB_OUTPUT
 
+      - name: Sign the payload
+        if: steps.signing.outputs.signed == 'true'
+        env:
+          # DefaultAzureCredential inside the dlib reads these three itself;
+          # they are never passed on a command line, where a failing signtool
+          # would echo them back into the log.
+          AZURE_TENANT_ID: ${{ secrets.AZURE_SIGN_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_SIGN_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_SIGN_CLIENT_SECRET }}
+          CADENT_SIGN_DLIB: ${{ steps.dlib.outputs.dlib }}
+          CADENT_SIGN_METADATA: ${{ steps.dlib.outputs.metadata }}
+        # --require, not the default skip: this step only runs when the gate
+        # above said the credentials are all present, so a signer that resolves
+        # to None here is a bug in the wiring and not a build without secrets.
+        run: uv run python scripts/sign_windows.py --require dist/Cadent
+
       - name: Compile installer (Inno Setup)
         shell: pwsh
         run: |
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
             /DAppVersion=${{ steps.version.outputs.version }} `
             packaging\cadent.iss
+
+      - name: Sign the installer
+        if: steps.signing.outputs.signed == 'true'
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_SIGN_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_SIGN_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_SIGN_CLIENT_SECRET }}
+          CADENT_SIGN_DLIB: ${{ steps.dlib.outputs.dlib }}
+          CADENT_SIGN_METADATA: ${{ steps.dlib.outputs.metadata }}
+        shell: pwsh
+        run: |
+          # --force: ISCC stamps its own version resource onto the stub, so the
+          # freshly compiled installer can inherit a signature-shaped blob that
+          # the skip-if-signed check would take at face value.
+          uv run python scripts/sign_windows.py --require --force `
+            (Get-Item dist/installer/*.exe).FullName
+
+      - name: Verify the installer installs silently
+        shell: pwsh
+        run: |
+          # The requirement that fails the most Store submissions: "Initiating
+          # the install must not display an installation user interface." An
+          # Inno script grows a prompt easily — a new [Tasks] page, a message
+          # box in [Code] — and nothing else in this pipeline would notice.
+          # PrivilegesRequired=lowest means no UAC to answer here either.
+          #
+          # /SUPPRESSMSGBOXES makes a stray prompt fail rather than hang; the
+          # 5-minute cap catches one that blocks before that flag applies.
+          $installer = (Get-Item dist/installer/*.exe).FullName
+          $process = Start-Process -FilePath $installer `
+            -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' `
+            -PassThru
+          if (-not $process.WaitForExit(300000)) {
+            $process.Kill()
+            Write-Host "::error::installer did not complete silently within 5 minutes"
+            exit 1
+          }
+          if ($process.ExitCode -ne 0) {
+            Write-Host "::error::silent install exited $($process.ExitCode)"
+            exit 1
+          }
+
+          # {autopf} under PrivilegesRequired=lowest, which is the whole reason
+          # there is no UAC prompt to answer here.
+          $installed = "$env:LOCALAPPDATA\Programs\Cadent\Cadent.exe"
+          # Inno with lowest privileges doesn't respawn itself, so the exit
+          # above should already mean "done" - the short retry is only so a
+          # filesystem that hasn't settled fails the release, rather than a
+          # required check going flaky on timing.
+          for ($attempt = 0; $attempt -lt 10 -and -not (Test-Path $installed); $attempt++) {
+            Start-Sleep -Seconds 1
+          }
+          if (-not (Test-Path $installed)) {
+            Write-Host "::error::silent install reported success but $installed is missing"
+            exit 1
+          }
+
+          # Uninstall silently too: Partner Center asks for both switches, and
+          # a broken uninstaller is a certification failure on its own.
+          $uninstaller = "$env:LOCALAPPDATA\Programs\Cadent\unins000.exe"
+          $removal = Start-Process -FilePath $uninstaller `
+            -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' `
+            -PassThru
+          if (-not $removal.WaitForExit(300000)) {
+            $removal.Kill()
+            Write-Host "::error::uninstaller did not complete silently"
+            exit 1
+          }
+          Write-Host "Silent install and uninstall both clean."
+
+      - name: Verify the signature
+        if: steps.signing.outputs.signed == 'true'
+        shell: pwsh
+        run: |
+          # Re-verifying what sign_windows.py already checked, because this is
+          # the artefact the Store actually fetches and the two are only the
+          # same file if ISCC and the signing step agreed about the path.
+          $installer = (Get-Item dist/installer/*.exe).FullName
+          $signature = Get-AuthenticodeSignature $installer
+          if ($signature.Status -ne 'Valid') {
+            Write-Host "::error::installer signature is $($signature.Status), not Valid"
+            exit 1
+          }
+          Write-Host "Signed by: $($signature.SignerCertificate.Subject)"
 
       - uses: actions/upload-artifact@v4
         with:

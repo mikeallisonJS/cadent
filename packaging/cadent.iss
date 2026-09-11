@@ -1,7 +1,19 @@
 ; Inno Setup script (#48): wraps the PyInstaller onedir output (scripts/build.py)
-; in a per-user installer. Unsigned per the M3 charter — SmartScreen is clicked
-; through; per-user install (no UAC) keeps everything under the user profile,
-; matching the HKCU autostart key and %LOCALAPPDATA% data dir.
+; in a per-user installer. Per-user install (no UAC) keeps everything under the
+; user profile, matching the HKCU autostart key and %LOCALAPPDATA% data dir.
+;
+; Signing happens outside this script, on both sides of it — the payload before
+; ISCC runs, the compiled installer after (scripts/sign_windows.py), so the
+; SignTool directive stays unused deliberately. The M3 charter accepted an
+; unsigned build and its SmartScreen warning; that is still what you get with
+; no credentials configured, and it is the one thing the Microsoft Store's
+; MSI/EXE submission path will not accept.
+;
+; Everything here must stay silent-installable: "initiating the install must
+; not display an installation user interface" is a Store requirement, and
+; build-installer.yml exercises /VERYSILENT on every build to keep a newly
+; added page or message box from reaching a submission. A prompt is fine only
+; where it is already gated on `not UninstallSilent`, as the data prompt below.
 ;
 ; Compile:  ISCC.exe [/DAppVersion=x.y.z] packaging\cadent.iss
 ; Requires: dist\Cadent\ from scripts/build.py.
