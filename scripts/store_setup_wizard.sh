@@ -323,14 +323,43 @@ stage "Azure — identity validation (the long wait)"
 say "Microsoft verifies who you are before it will issue a public certificate."
 warn "Portal only — this step has no CLI, and it takes 1 to 20 business days."
 say ""
-say "First, the role. Identity validation is invisible without it:"
-step "Your Artifact Signing account > Access control (IAM) > Add role assignment."
-step "Role: 'Artifact Signing Identity Verifier' — assign it to yourself."
-note "You also need at least Reader at subscription scope for that role to work."
+say "First the role. Being subscription Owner is NOT enough — Owner grants"
+say "'manage role assignment' and specifically not 'manage identity validation',"
+say "so the portal refuses with a message about the role taking a few moments."
+ACCOUNT_SCOPE="/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${AZURE_SIGN_RESOURCE_GROUP}/providers/Microsoft.CodeSigning/codeSigningAccounts/${AZURE_SIGN_ACCOUNT}"
+if command -v az >/dev/null 2>&1 && az account show >/dev/null 2>&1; then
+  MY_OBJECT_ID=$(az ad signed-in-user show --query id -o tsv 2>/dev/null || true)
+  if [[ -n "$MY_OBJECT_ID" ]]; then
+    az role assignment create --assignee-object-id "$MY_OBJECT_ID" \
+      --assignee-principal-type User \
+      --role "Artifact Signing Identity Verifier" \
+      --scope "$ACCOUNT_SCOPE" --only-show-errors >/dev/null 2>&1 || true
+    if az role assignment list --assignee "$MY_OBJECT_ID" --scope "$ACCOUNT_SCOPE" \
+         --include-inherited \
+         --query "[?roleDefinitionName=='Artifact Signing Identity Verifier']" \
+         -o tsv 2>/dev/null | grep -q .; then
+      printf '  %s✓%s Artifact Signing Identity Verifier confirmed\n' "$GREEN" "$RESET"
+      note "Give it a minute to propagate, and hard-refresh the portal tab."
+    else
+      warn "couldn't confirm the role — assign it by hand:"
+      step "Account > Access control (IAM) > Add role assignment >"
+      step "  'Artifact Signing Identity Verifier' > yourself."
+    fi
+  fi
+else
+  step "Account > Access control (IAM) > Add role assignment."
+  step "Role: 'Artifact Signing Identity Verifier' — assign it to yourself."
+  note "You also need at least Reader at subscription scope for that role to work."
+fi
 say ""
 say "Then the validation itself:"
 step "Account > Objects > Identity validations."
-step "Switch the dropdown from Organization to Individual, then New Identity > Public."
+warn "THE DROPDOWN DEFAULTS TO ORGANIZATION. Change it to Individual BEFORE"
+warn "clicking New Identity, or you get the organization form — which then"
+warn "demands incorporation records, business licenses and tax filings you have"
+warn "no way to produce. A validation cannot be converted or edited; the only"
+warn "fix is abandoning it and creating a new one."
+step "Set the dropdown to Individual, THEN New Identity > Public."
 step "Select the billing account tied to your subscription."
 step "The form auto-fills from it and is read-only — if anything is wrong, fix it"
 step "  in the billing account, not here."
@@ -393,14 +422,30 @@ if command -v az >/dev/null 2>&1 && az account show >/dev/null 2>&1; then
     az ad sp create --id "$AZURE_SIGN_CLIENT_ID" >/dev/null 2>&1 || true
     SP_OBJECT_ID=$(az ad sp show --id "$AZURE_SIGN_CLIENT_ID" --query id -o tsv 2>/dev/null || true)
   fi
-  if [[ -n "$SP_OBJECT_ID" ]] && az role assignment create \
+  ROLE_ERROR=""
+  if [[ -n "$SP_OBJECT_ID" ]]; then
+    # Errors are shown, not swallowed. Silencing this is how a missing role
+    # survives setup and resurfaces as a bare 403 from the signing service
+    # three stages later, where nothing points back to here.
+    ROLE_ERROR=$(az role assignment create \
       --assignee-object-id "$SP_OBJECT_ID" \
       --assignee-principal-type ServicePrincipal \
       --role "Artifact Signing Certificate Profile Signer" \
-      --scope "$SCOPE" >/dev/null 2>&1; then
-    printf '  %s✓%s assigned Artifact Signing Certificate Profile Signer\n' "$GREEN" "$RESET"
+      --scope "$SCOPE" --only-show-errors 2>&1 >/dev/null) || true
+  fi
+
+  # Read it back rather than trusting the exit code. "Created" and "actually
+  # there" are different claims, and only the second one makes signing work.
+  if [[ -n "$SP_OBJECT_ID" ]] && az role assignment list \
+       --assignee "$SP_OBJECT_ID" --scope "$SCOPE" --include-inherited \
+       --query "[?roleDefinitionName=='Artifact Signing Certificate Profile Signer']" \
+       -o tsv 2>/dev/null | grep -q .; then
+    printf '  %s✓%s Artifact Signing Certificate Profile Signer confirmed on the profile\n' \
+      "$GREEN" "$RESET"
   else
-    warn "couldn't assign the role automatically — do it in the portal:"
+    warn "the signing role is NOT on the service principal."
+    [[ -n "$ROLE_ERROR" ]] && note "az said: $ROLE_ERROR"
+    warn "Signing will fail with 403 Forbidden until this is fixed."
     step "Certificate profile > Access control (IAM) > Add role assignment >"
     step "  'Artifact Signing Certificate Profile Signer' > your app registration."
     SKIPPED+=("role assignment: Artifact Signing Certificate Profile Signer on $AZURE_SIGN_PROFILE")
@@ -446,11 +491,26 @@ say "installer, signs that too, then checks it installs and uninstalls silently"
 say "— the requirement that fails the most Store submissions."
 say ""
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-  if confirm "Kick off a build now (workflow_dispatch on main)?"; then
-    gh workflow run build-installer.yml --repo "$REPO_SLUG" --ref main \
+  # The branch you are on, not main. Dispatching main runs whatever workflow
+  # main already has — which, while the signing work is still in review, is the
+  # unsigned one. That build goes green, signs nothing, and prints no
+  # certificate subject to check, so the failure reads as "it worked".
+  BUILD_REF=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)
+  say "Dispatching against: $BUILD_REF"
+  if ! git diff --quiet HEAD -- .github/workflows/build-installer.yml 2>/dev/null; then
+    warn "build-installer.yml has uncommitted changes — GitHub runs the pushed"
+    warn "version, not your working copy. Commit and push first."
+  fi
+  if ! git ls-remote --exit-code --heads origin "$BUILD_REF" >/dev/null 2>&1; then
+    warn "$BUILD_REF isn't pushed yet — push it or the dispatch will fail."
+  fi
+  if confirm "Kick off a build now (workflow_dispatch on $BUILD_REF)?"; then
+    gh workflow run build-installer.yml --repo "$REPO_SLUG" --ref "$BUILD_REF" \
       && printf '  %s✓%s dispatched\n' "$GREEN" "$RESET" \
       || warn "dispatch failed — trigger it from the Actions tab"
     say "Watch it with:  gh run watch --repo $REPO_SLUG"
+    note "Check the run's CONCLUSION, not the watch command's exit code —"
+    note "gh run watch can exit 0 on a failed run."
   fi
 else
   open_url "https://github.com/$REPO_SLUG/actions/workflows/build-installer.yml"
