@@ -16,3 +16,6 @@ build/
 
 # Claude Code's per-agent worktrees — each is its own git repo.
 .claude/worktrees/
+
+# Wizard-captured credentials (scripts/store_setup_wizard.sh) - never commit.
+.env
