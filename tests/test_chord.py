@@ -106,6 +106,66 @@ def test_toggle_no_retrigger_without_full_release():
     assert acts == []                                        # not re-armed yet
 
 
+# ---- tap_or_hold: one chord, both grips ----------------------------------
+
+
+def test_tap_or_hold_tap_latches_then_tap_stops():
+    sm = make("tap_or_hold")
+    acts = press_chord(sm)
+    assert Action.START in acts and Action.MASK_MENU in acts
+    assert release_chord(sm, t=0.1) == []                    # tap: stays latched
+    acts = press_chord(sm, t=5.0)
+    assert acts == [Action.MASK_MENU]                        # stop comes on release
+    assert release_chord(sm, t=5.05) == [Action.STOP]
+
+
+def test_tap_or_hold_hold_stops_on_release():
+    sm = make("tap_or_hold")
+    press_chord(sm)
+    assert release_chord(sm, t=1.0) == [Action.STOP]
+    acts = press_chord(sm, t=2.0)                            # next press starts again
+    assert Action.START in acts
+
+
+def test_tap_or_hold_hold_while_latched_stops_on_release():
+    sm = make("tap_or_hold")
+    press_chord(sm)
+    release_chord(sm, t=0.1)                                 # latched
+    press_chord(sm, t=5.0)
+    assert release_chord(sm, t=7.0) == [Action.STOP]         # long hold still just stops
+
+
+def test_tap_or_hold_non_chord_key_cancels_physical_hold_only():
+    sm = make("tap_or_hold")
+    press_chord(sm)
+    assert sm.on_event(KEY_A, True, False, 0.1) == [Action.DISCARD]
+    sm.on_event(KEY_A, False, False, 0.15)
+    assert release_chord(sm, t=1.0) == []                    # already cancelled
+    # latched tap: other keys must not touch the recording
+    press_chord(sm, t=2.0)
+    release_chord(sm, t=2.1)
+    assert sm.on_event(KEY_A, True, False, 3.0) == []
+    sm.on_event(KEY_A, False, False, 3.1)
+    press_chord(sm, t=4.0)
+    assert release_chord(sm, t=4.1) == [Action.STOP]
+
+
+def test_tap_or_hold_no_retrigger_without_full_release():
+    sm = make("tap_or_hold")
+    press_chord(sm)
+    sm.on_event(WIN_L, False, False, 0.1)                    # win up, ctrl still down
+    assert sm.on_event(WIN_L, True, False, 0.2) == []        # not re-armed yet
+    assert sm.on_event(WIN_L, False, False, 1.0) == []       # already inactive
+    assert sm.on_event(CTRL_L, False, False, 1.1) == []
+    acts = press_chord(sm, t=2.0)                            # full release re-armed
+    assert acts == [Action.MASK_MENU]                        # still latched from the tap
+
+
+def test_tap_or_hold_rejected_by_hold_and_toggle_unchanged():
+    with pytest.raises(ValueError):
+        ChordStateMachine("<ctrl>+<cmd>", "hybrid")
+
+
 # ---- TapChord (the cleanup toggle hotkey) ---------------------------------
 
 TAP_KEYS = (CTRL_L, SHIFT_L, ALT_L)

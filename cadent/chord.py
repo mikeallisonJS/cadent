@@ -7,6 +7,9 @@ Implements the resolved "Hotkey capture mechanism" decisions:
 - hold: sub-min-hold release discards; any non-chord keydown mid-hold cancels
   (the OS owns Ctrl+Win+<key> shortcuts)
 - toggle: chord-down flip-flop, re-armed only after full chord release
+- tap-or-hold: one chord, both grips. A press that starts recording latches if
+  released before min-hold (a tap) and stops on release otherwise (a hold);
+  any press while latched stops on release. Re-armed like toggle.
 - MASK_MENU fires when the chord activates, so a non-chord key event sits between
   Win-down and Win-up and the Start menu never triggers on release
 """
@@ -114,9 +117,12 @@ class TapChord:
         return fired
 
 
+MODES = ("hold", "toggle", "tap_or_hold")
+
+
 class ChordStateMachine:
     def __init__(self, combo: str, mode: str = "hold", min_hold_s: float = 0.2) -> None:
-        if mode not in ("hold", "toggle"):
+        if mode not in MODES:
             raise ValueError(f"Unknown hotkey mode: {mode!r}")
         self.mode = mode
         self.min_hold_s = min_hold_s
@@ -126,6 +132,7 @@ class ChordStateMachine:
         self._active = False        # hold: recording; toggle: chord currently engaged
         self._toggled = False       # toggle: recording on
         self._armed = True          # toggle: chord fully released since last flip
+        self._press_started = False  # tap-or-hold: this press began the recording
         self._start_t = 0.0
 
     def _satisfied(self) -> bool:
@@ -147,6 +154,12 @@ class ChordStateMachine:
             if self.mode == "hold" and self._active:
                 self._active = False
                 return [Action.DISCARD]
+            if self.mode == "tap_or_hold" and self._active and self._press_started:
+                # Still physically held, so it is a hold being cancelled — a
+                # latched tap is deliberately immune (the user is typing).
+                self._active = False
+                self._toggled = False
+                return [Action.DISCARD]
             return []
 
         if not self._satisfied():
@@ -159,10 +172,20 @@ class ChordStateMachine:
                 return [Action.MASK_MENU, Action.START]
             return []
 
-        # toggle
         if not self._armed:
             return []
         self._armed = False
+
+        if self.mode == "tap_or_hold":
+            self._active = True
+            self._start_t = now
+            self._press_started = not self._toggled
+            if self._toggled:
+                return [Action.MASK_MENU]       # stops on release, tap or hold
+            self._toggled = True
+            return [Action.MASK_MENU, Action.START]
+
+        # toggle
         if self._toggled:
             self._toggled = False
             return [Action.MASK_MENU, Action.STOP]
@@ -178,6 +201,16 @@ class ChordStateMachine:
                 self._active = False
                 held = now - self._start_t
                 actions.append(Action.DISCARD if held < self.min_hold_s else Action.STOP)
+        elif self.mode == "tap_or_hold":
+            if self._active and vk in self._chord_vks and not self._satisfied():
+                self._active = False
+                held = now - self._start_t
+                if not self._press_started or held >= self.min_hold_s:
+                    self._toggled = False
+                    actions.append(Action.STOP)
+                # else: a tap — recording stays latched until the next press
+            if not (self._chord_vks & self._down):
+                self._armed = True
         elif not (self._chord_vks & self._down):
             self._armed = True        # toggle: full release re-arms
 

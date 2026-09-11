@@ -146,7 +146,7 @@ SEED_COMMENTS: dict[str, str] = {
 class Config:
     # Hotkey. Modifier-only chords supported; see chord.py for parsing.
     hotkey: str = "<ctrl>+<cmd>"          # Ctrl + Win
-    hotkey_mode: str = "hold"             # "hold" | "toggle"
+    hotkey_mode: str = "tap_or_hold"      # "hold" | "toggle" | "tap_or_hold"
     min_hold_ms: int = 200                # hold shorter than this discards the utterance
     paused: bool = False                  # persisted pause state
 
@@ -268,7 +268,7 @@ def _sanitize(cfg: Config, supplied: dict) -> tuple[Config, list[SanitizeIssue]]
 
     if cfg.input_device is not None and not isinstance(cfg.input_device, str):
         reset("input_device", None)
-    if cfg.hotkey_mode not in ("hold", "toggle"):
+    if cfg.hotkey_mode not in ("hold", "toggle", "tap_or_hold"):
         reset("hotkey_mode", defaults.hotkey_mode)
     if cfg.theme not in ("system", "light", "dark"):
         reset("theme", defaults.theme)
