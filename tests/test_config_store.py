@@ -221,7 +221,7 @@ def test_a_sanitized_field_never_reads_as_divergence(tmp_path):
     path = tmp_path / "config.json"
     path.write_text(json.dumps({"hotkey_mode": "hodl"}), encoding="utf-8")
     store = ConfigStore(path)
-    assert store.config.hotkey_mode == "hold"
+    assert store.config.hotkey_mode == "tap_or_hold"
     assert store.divergence() == {}
 
 
@@ -255,7 +255,7 @@ def test_a_bad_value_is_reported_rather_than_silently_repaired(tmp_path):
                                 "max_utterance_seconds": "x"}), encoding="utf-8")
     store = ConfigStore(path)
     reported = {i.field: (i.file_value, i.used) for i in store.sanitized}
-    assert reported["hotkey_mode"] == ("hodl", "hold")
+    assert reported["hotkey_mode"] == ("hodl", "tap_or_hold")
     assert reported["max_utterance_seconds"] == ("x", 120)
     assert path.read_text(encoding="utf-8")      # the file is left alone
 
