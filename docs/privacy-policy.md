@@ -52,8 +52,15 @@ to the internet in exactly two situations, both of which you start:
    card that could speed up transcription, it is never installed
    automatically, and you can undo it by deleting the `cuda` folder.
 
-Both transfers only download files to your computer. Neither sends your audio,
-your transcripts, your settings, or any identifier about you or your machine.
+Both transfers only download files to your computer. Neither uploads your
+audio, your transcripts, your settings, your history, or any account or
+installation identifier.
+
+Like any download, these requests do reveal your IP address and a user-agent
+string to the server you are downloading from — that is how the internet works,
+and it is the same information your browser sends when you visit a web page.
+Cadent adds nothing to it: no account, no device fingerprint, and no identifier
+that would let anyone connect one download to another.
 
 ## Microphone access
 
@@ -74,8 +81,13 @@ applications.
 
 ## Children
 
-Cadent is a general-purpose utility and is not directed at children. It
-collects no personal information from anyone, including children.
+Cadent is a general-purpose utility and is not directed at children.
+
+Cadent does save what you dictate — but only to your own computer, in the
+files listed above. It is never transmitted to us or to anyone else, because
+there is nowhere for it to go. That is true of every user, children included:
+no personal information is collected from anyone, in the sense of being
+received by us, and deleting the data folder removes what is stored locally.
 
 ## Changes to this policy
 

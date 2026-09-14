@@ -10,7 +10,8 @@ stops being true, change it here and in the listing.
 
 ## Short description
 
-*(Partner Center limit: 200 characters. This one is 138.)*
+*(Partner Center limit: 1,000 characters, but only the first 270 show in some
+Store views — Microsoft recommends staying under 270. This one is 151.)*
 
 > Push-to-talk dictation that runs entirely on your PC. Hold a hotkey, speak,
 > release — your words appear at the cursor in any app. No cloud, no account.
@@ -65,8 +66,10 @@ stops being true, change it here and in the listing.
 > Cadent connects to the internet in exactly two situations, both of which you
 > start yourself. The first is downloading a speech or cleanup model, which is
 > disclosed with its size beforehand, shows progress, and can be cancelled. The
-> second is the optional GPU support pack described below. Neither sends
-> anything about you anywhere.
+> second is the optional GPU support pack described below. Both only fetch
+> files — neither uploads your audio, your transcripts, your settings or any
+> account identifier, because Cadent has no account and no server to send them
+> to.
 >
 > **About the optional GPU support pack**
 >
@@ -76,8 +79,10 @@ stops being true, change it here and in the listing.
 > This is entirely optional, never automatic, and always disclosed before it
 > runs. It exists because bundling these libraries with every copy would add
 > roughly half a gigabyte for the many people who cannot use them. They are
-> stored in your local application data folder, and deleting that folder
-> reverts Cadent to running on the processor.
+> stored in a folder named "cuda" inside Cadent's application data folder, and
+> deleting that one folder removes the pack and returns Cadent to running on
+> the processor. Your settings, history and models are stored separately and
+> are not affected.
 >
 > **Requirements**
 >
@@ -85,7 +90,14 @@ stops being true, change it here and in the listing.
 > whichever models you choose to download — Cadent shows each model's exact
 > download size before you commit to it.
 >
-> Cadent is open source: https://github.com/mikeallisonJS/cadent
+> Cadent is open source, and the link to its source code is in the Website
+> field of this listing.
+
+> **Do not paste a URL into the Description field.** Microsoft's listing
+> guidance is explicit: *"Do not include HTML, code snippets, or URLs in the
+> description field. Instead, provide support, privacy policy, and website
+> links in their designated submission fields."* The repository URL belongs in
+> **Website**, which is already set below.
 
 ---
 
@@ -128,8 +140,21 @@ stops being true, change it here and in the listing.
 
 ### Search terms
 
-`dictation`, `speech to text`, `voice typing`, `transcription`, `offline`,
-`local`, `whisper`, `push to talk`, `accessibility`, `productivity`
+Listed in priority order. Microsoft's MSI/EXE listing page documents no
+keywords field at all, and the familiar seven-term cap belongs to the MSIX
+listing — so treat the count as unknown until you see the field. If it caps,
+take them from the top.
+
+1. `dictation`
+2. `speech to text`
+3. `voice typing`
+4. `offline`
+5. `transcription`
+6. `push to talk`
+7. `local`
+8. `whisper`
+9. `accessibility`
+10. `productivity`
 
 ---
 
