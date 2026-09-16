@@ -20,6 +20,24 @@
 # Signing runs twice, on either side of ISCC, because Inno compresses the
 # payload into the installer — signing dist/Cadent afterwards would sign files
 # nobody downloads. See scripts/sign_windows.py.
+#
+# Tag builds also publish the signed installer to Cloudflare R2, gated the same
+# way on five more secrets. The Microsoft Store cannot be given the GitHub
+# release URL: release assets answer 302 and redirect to a signed link that
+# expires within the hour, and Partner Center requires a direct, unchanging
+# one. The release asset stays exactly as it is for people downloading it
+# themselves; R2 is what a submission points at.
+#
+#   R2_ACCOUNT_ID         Cloudflare account id (the r2.cloudflarestorage host)
+#   R2_ACCESS_KEY_ID      R2 API token, Object Read & Write on the bucket
+#   R2_SECRET_ACCESS_KEY  its secret
+#   R2_BUCKET             bucket name
+#   R2_PUBLIC_HOST        custom domain on the bucket, e.g. downloads.example.com
+#
+# R2_PUBLIC_HOST must be a custom domain, not the pub-<hash>.r2.dev address:
+# Cloudflare rate-limits r2.dev, returns 429 under load, and says outright that
+# it is not for production — and this URL likely serves every Store install,
+# not just Microsoft's one certification fetch.
 
 name: build-installer
 
@@ -255,3 +273,78 @@ jobs:
           gh release create $env:GITHUB_REF_NAME --generate-notes 2>$null
           if ($LASTEXITCODE -ne 0) { Write-Host "release exists" }
           gh release upload $env:GITHUB_REF_NAME (Get-Item dist/installer/*.exe).FullName --clobber
+
+      - name: Publish the installer to R2
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          # R2 speaks S3, so the AWS CLI on the runner drives it.
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          # AWS CLI v2.23+ sends a CRC32 integrity header by default and R2
+          # answers "Header 'x-amz-checksum-algorithm' with value 'CRC32' not
+          # implemented". These restore the pre-2025 behaviour; without them
+          # every upload fails on a header nobody asked for.
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          R2_PUBLIC_HOST: ${{ secrets.R2_PUBLIC_HOST }}
+        run: |
+          # The Microsoft Store will not take the GitHub release URL: release
+          # assets answer 302 and redirect to a signed URL that expires within
+          # the hour, while Partner Center requires a direct, unchanging link.
+          # So the same signed installer is published twice — to the GitHub
+          # release for people downloading it themselves, and to R2 for the
+          # Store to fetch. See docs/agents/releases.md.
+          #
+          # Same three-state gate as signing: none skips, partial fails, all
+          # five publish. A partial set here would leave a tagged release whose
+          # submission URL silently does not exist.
+          $values = @($env:AWS_ACCESS_KEY_ID, $env:AWS_SECRET_ACCESS_KEY,
+                      $env:R2_ACCOUNT_ID, $env:R2_BUCKET, $env:R2_PUBLIC_HOST)
+          $present = @($values | Where-Object { $_ }).Count
+
+          if ($present -eq 0) {
+            Write-Host "No R2 secrets - skipping. The GitHub release still has the installer,"
+            Write-Host "but no Store-submittable URL was produced for this tag."
+            exit 0
+          }
+          if ($present -ne $values.Count) {
+            $absent = $values.Count - $present
+            Write-Host "::error::R2 publishing needs all five R2_* / AWS_* secrets - $absent of them are unset."
+            exit 1
+          }
+
+          $installer = (Get-Item dist/installer/*.exe)
+          $version = "${{ steps.version.outputs.version }}"
+          $key = "v$version/$($installer.Name)"
+
+          aws s3 cp $installer.FullName "s3://$env:R2_BUCKET/$key" `
+            --endpoint-url "https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com" `
+            --content-type "application/octet-stream"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::upload to R2 failed"
+            exit 1
+          }
+
+          # Prove the URL satisfies Partner Center before anyone pastes it into
+          # a submission: reachable, and answering directly rather than
+          # redirecting. "The package URL redirects to another URL" is exactly
+          # the rejection this guards against, and finding it here costs a
+          # minute where finding it in Partner Center costs a round trip.
+          $url = "https://$env:R2_PUBLIC_HOST/$key"
+          $response = Invoke-WebRequest -Uri $url -Method Head -MaximumRedirection 0 `
+            -SkipHttpErrorCheck -ErrorAction SilentlyContinue
+          if ($null -eq $response) {
+            Write-Host "::error::$url could not be reached - is the custom domain attached to the bucket?"
+            exit 1
+          }
+          if ($response.StatusCode -ne 200) {
+            Write-Host "::error::$url answered $($response.StatusCode), not 200. Partner Center rejects anything that redirects."
+            exit 1
+          }
+
+          Write-Host "Store package URL: $url"
+          "### Store package URL`n``$url``" >> $env:GITHUB_STEP_SUMMARY
