@@ -97,7 +97,7 @@ What that path requires, and where each requirement is kept honest:
 | Installer **and every PE file inside it** chain to a Microsoft-trusted root | `scripts/sign_windows.py`, both passes |
 | Installs with no UI (UAC is allowed; we never even prompt) | `PrivilegesRequired=lowest`, exercised by the `/VERYSILENT` step in `build-installer.yml` |
 | Standalone installer — no downloading during setup | the onedir payload is embedded; model downloads are first-run app behaviour, not setup |
-| Versioned download URL whose binary never changes, **serving it with no redirect** | `https://downloads.mikeallisonjs.com/vX.Y.Z/Cadent-Setup-X.Y.Z.exe`, published to Cloudflare R2 by `build-installer.yml` on tag |
+| Versioned download URL whose binary never changes, **serving it with no redirect** | `https://downloads.mikeallisonjs.com/cadent/vX.Y.Z/Cadent-Setup-X.Y.Z.exe`, published to Cloudflare R2 by `build-installer.yml` on tag |
 
 **The GitHub Release asset URL cannot be submitted**, which is worth stating
 plainly because it looks like it should be. Release assets answer `302` and

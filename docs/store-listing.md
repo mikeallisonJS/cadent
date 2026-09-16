@@ -127,7 +127,7 @@ submission fields."* The repository link belongs in **Website**, set below.
 | Support contact | `https://github.com/mikeallisonJS/cadent/issues` |
 | Install switches | `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART` |
 | Uninstall switches | `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART` |
-| Package URL | `https://downloads.mikeallisonjs.com/vX.Y.Z/Cadent-Setup-X.Y.Z.exe` — printed in the tag build's job summary |
+| Package URL | `https://downloads.mikeallisonjs.com/cadent/vX.Y.Z/Cadent-Setup-X.Y.Z.exe` — printed in the tag build's job summary |
 
 **Not the GitHub Release asset URL.** It answers `302` and redirects to a
 signed link that expires within the hour; Partner Center rejects it with "The

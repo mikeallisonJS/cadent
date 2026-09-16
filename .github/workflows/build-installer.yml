@@ -31,7 +31,8 @@
 #   R2_ACCOUNT_ID         Cloudflare account id (the r2.cloudflarestorage host)
 #   R2_ACCESS_KEY_ID      R2 API token, Object Read & Write on the bucket
 #   R2_SECRET_ACCESS_KEY  its secret
-#   R2_BUCKET             bucket name
+#   R2_BUCKET             bucket name — shared across apps; this one writes
+#                         only under cadent/<version>/
 #   R2_PUBLIC_HOST        custom domain on the bucket, e.g. downloads.example.com
 #
 # R2_PUBLIC_HOST must be a custom domain, not the pub-<hash>.r2.dev address:
@@ -319,7 +320,9 @@ jobs:
 
           $installer = (Get-Item dist/installer/*.exe)
           $version = "${{ steps.version.outputs.version }}"
-          $key = "v$version/$($installer.Name)"
+          # Namespaced under the app: the bucket and its downloads host are
+          # shared with other projects, so nothing here may claim the root.
+          $key = "cadent/v$version/$($installer.Name)"
 
           aws s3 cp $installer.FullName "s3://$env:R2_BUCKET/$key" `
             --endpoint-url "https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com" `
