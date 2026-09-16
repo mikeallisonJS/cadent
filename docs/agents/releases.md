@@ -97,13 +97,34 @@ What that path requires, and where each requirement is kept honest:
 | Installer **and every PE file inside it** chain to a Microsoft-trusted root | `scripts/sign_windows.py`, both passes |
 | Installs with no UI (UAC is allowed; we never even prompt) | `PrivilegesRequired=lowest`, exercised by the `/VERYSILENT` step in `build-installer.yml` |
 | Standalone installer — no downloading during setup | the onedir payload is embedded; model downloads are first-run app behaviour, not setup |
-| Versioned download URL whose binary never changes | the `vX.Y.Z` GitHub Release asset, which `tag-release.yml` publishes once |
+| Versioned download URL whose binary never changes, **serving it with no redirect** | `https://downloads.mikeallisonjs.com/vX.Y.Z/Cadent-Setup-X.Y.Z.exe`, published to Cloudflare R2 by `build-installer.yml` on tag |
+
+**The GitHub Release asset URL cannot be submitted**, which is worth stating
+plainly because it looks like it should be. Release assets answer `302` and
+redirect to a `release-assets.githubusercontent.com` link that is signed and
+expires within the hour, and Partner Center rejects both the redirect and,
+obviously, a URL that dies the same afternoon. GitHub Pages is not an
+alternative either — its 100 MB file limit is under the installer's size.
+
+So a tag build publishes the same signed installer twice: to the GitHub
+Release, for everyone downloading it directly, and to a Cloudflare R2 bucket
+behind `downloads.mikeallisonjs.com`, which is what a submission points at.
+The R2 step verifies the public URL answers `200` rather than a redirect
+before the build goes green, so a broken submission URL fails the release
+instead of failing certification.
+
+That host must stay a custom domain. R2's built-in `pub-<hash>.r2.dev` address
+is rate-limited, returns `429` under load, and Cloudflare says outright it is
+not for production — and because Partner Center makes the developer
+responsible for maintaining the URL rather than mirroring the binary, it very
+likely serves every Store install and not just the one certification fetch.
 
 Submitting a release is therefore: ship the tag as usual, wait for
-`build-installer.yml` to attach the signed installer, then point the Partner
-Center submission at that release's asset URL. A new version means a new
-submission with a new URL — never repointing an old one, which the Store
-forbids.
+`build-installer.yml` to sign, publish and verify, then point the Partner
+Center submission at the R2 URL it prints in the job summary. A new version
+means a new submission with a new URL — never repointing an old one, which the
+Store forbids, and which the per-version key layout makes awkward to do by
+accident.
 
 Account setup, Azure Artifact Signing provisioning and the first submission
 are one-time human steps: run `scripts/store_setup_wizard.sh`.
