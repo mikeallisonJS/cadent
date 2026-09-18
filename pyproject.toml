@@ -3,6 +3,9 @@ name = "cadent"
 version = "0.6.0"
 description = "Fully-local push-to-talk AI dictation for Windows and macOS: transcribe, clean up, insert at the cursor"
 requires-python = ">=3.11"
+# SPDX expression (PEP 639), with the text shipped in the wheel and sdist.
+license = "MIT"
+license-files = ["LICENSE"]
 classifiers = [
     # The two OSes with a real platform adapter and a CI leg. Anything else
     # resolves to `platform/fallback.py`, which is a dev stub, not support.
@@ -61,7 +64,7 @@ build = [
 cadent = "cadent.__main__:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]  # 77: PEP 639 `license` expressions
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
