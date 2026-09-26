@@ -13,7 +13,7 @@ switched on may then ask the adapters live questions the table cannot hold
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
@@ -38,6 +38,10 @@ class KeycodeTable:
     # accepts *any* single character through ord(); keep that contract where it
     # was true rather than silently narrowing what a hand-edited config may say.
     ord_fallback: bool = False
+    # "ctrl" → (left keycode, right keycode), in the order a written chord
+    # lists its modifiers. The sided groups (`<rctrl>`, #64) are generated
+    # from this, and it is what lets a physical key be named back (#63).
+    sides: Mapping[str, tuple[int, int]] = field(default_factory=dict)
 
     def group_for(self, part: str) -> frozenset[int] | None:
         """The keycode group a combo part names, or None if unrecognized."""
@@ -49,6 +53,31 @@ class KeycodeTable:
             return frozenset({self.function_keys[part]})
         if self.ord_fallback and len(part) == 1:
             return frozenset({ord(part.upper())})
+        return None
+
+    def part_for(self, keycode: int, sided: bool = False) -> str | None:
+        """The combo part a physical key writes — `group_for`'s inverse, for
+        the chord recorder (#63). A modifier writes its either-side name
+        unless `sided`, when it writes the side that was pressed. None for a
+        key no chord can name (the recorder refuses it rather than guessing
+        through `ord`, which is only ever right for A-Z and 0-9)."""
+        for name, (left, right) in self.sides.items():
+            if keycode in (left, right):
+                if sided:
+                    return f"<{'l' if keycode == left else 'r'}{name}>"
+                return f"<{name}>"
+        for table in (self.chars, self.function_keys):
+            for name, code in table.items():
+                if code == keycode:
+                    return name
+        return None
+
+    def modifier_rank(self, part: str) -> int | None:
+        """Where a modifier part sorts in a written chord, or None for a key.
+        `<ctrl>`, `<lctrl>` and `<rctrl>` share a slot."""
+        for rank, name in enumerate(self.sides):
+            if part in (f"<{name}>", f"<l{name}>", f"<r{name}>"):
+                return rank
         return None
 
 

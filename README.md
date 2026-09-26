@@ -98,8 +98,10 @@ First run downloads the faster-whisper model (default `small.en`) and creates co
 ## Config quick reference (`config.json` in the data dir above)
 
 - `hotkey`: e.g. `"<ctrl>+<cmd>"` (`<cmd>` is the Win key on Windows, Cmd on macOS).
-  A modifier part matches either side; name one side with `<rctrl>`, `<lshift>`,
-  `<ralt>`, `<rcmd>` and so on (`<ctrl_r>`-style spellings work too). `hotkey_mode`: `"hold"`, `"toggle"`, or `"tap_or_hold"` (the default: a tap latches recording on or off, a hold works like `"hold"`)
+  Settings ▸ Hotkeys records it for you — click the chord, press the keys, let
+  go — so nobody has to know this syntax. A modifier part matches either side;
+  name one side with `<rctrl>`, `<lshift>`, `<ralt>`, `<rcmd>` and so on
+  (`<ctrl_r>`-style spellings work too). `hotkey_mode`: `"hold"`, `"toggle"`, or `"tap_or_hold"` (the default: a tap latches recording on or off, a hold works like `"hold"`)
 - `stt_engine`: `faster-whisper` (the default, and the one that runs on any
   hardware) | `parakeet` (needs a GPU on Windows; on macOS it runs on the CPU
   like everything else).

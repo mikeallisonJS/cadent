@@ -37,6 +37,8 @@ class PushToTalk:
             platform = platform_pkg.current()
         self._tap = platform.hotkey_tap
         self._keyboard = platform.keyboard
+        self._cmd_keys = platform.capabilities.keycode_table.group_for("<cmd>") or frozenset()
+        self._capture: Callable[[int, bool], None] | None = None
         self._sm = ChordStateMachine(combo, mode, min_hold_s)
         self._cleanup_tap = (TapChord(cleanup_combo)
                              if cleanup_combo and on_cleanup_toggle else None)
@@ -51,8 +53,28 @@ class PushToTalk:
         self._worker: threading.Thread | None = None
         self._running = False
 
+    def capture(self, on_event: Callable[[int, bool], None]) -> None:
+        """Divert raw key events to `on_event` instead of the chords, until
+        `release_capture`. Settings ▸ Hotkeys records a chord this way (#63):
+        the one hook the OS gives us keeps running, and the keys being
+        recorded cannot start a dictation. Events arrive on the hook thread;
+        the recorder marshals."""
+        self._capture = on_event
+
+    def release_capture(self) -> None:
+        self._capture = None
+
     # Runs on the tap's hook thread — must stay fast; no callback work here.
     def _on_key_event(self, keycode: int, is_down: bool, injected: bool) -> None:
+        if self._capture is not None:
+            if injected:
+                return
+            self._capture(keycode, is_down)
+            # Recording a Win chord would otherwise pop the Start menu on
+            # release — the same trick the chord itself relies on.
+            if is_down and keycode in self._cmd_keys:
+                self._queue.put(Action.MASK_MENU)
+            return
         for action in self._sm.on_event(keycode, is_down, injected, time.monotonic()):
             self._queue.put(action)
         if self._cleanup_tap is not None and self._cleanup_tap.on_event(
