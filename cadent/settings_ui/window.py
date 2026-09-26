@@ -129,7 +129,7 @@ class SettingsWindow(QDialog):
     def __init__(self, store: ConfigStore, *, tokens: dict,
                  devices: list[str] | None = None, history=None,
                  high_contrast: bool = False, mic_monitor=None,
-                 parent=None) -> None:
+                 capture_keys=None, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("Root")
         self.setWindowTitle("Cadent — Settings")
@@ -143,7 +143,8 @@ class SettingsWindow(QDialog):
             applied=self._on_applied,
             request_theme=self.theme_requested.emit,
             request_move_overlay=self.move_overlay_requested.emit,
-            request_wizard=self.wizard_requested.emit)
+            request_wizard=self.wizard_requested.emit,
+            **({"capture_keys": capture_keys} if capture_keys is not None else {}))
 
         self.general = GeneralPane(self.ctx, high_contrast=high_contrast)
         self.hotkeys = HotkeysPane(self.ctx)

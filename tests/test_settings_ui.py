@@ -52,11 +52,38 @@ def paths(tmp_path):
 # the overlay's geometry tests need it too.
 
 
+class FakeCapture:
+    """Stands in for the app's `_capture_keys`: remembers the recorder's
+    callback so a test can press keys as the hook thread would (#63)."""
+
+    def __init__(self):
+        self.on_event = None
+        self.releases = 0
+
+    def __call__(self, on_event):
+        self.on_event = on_event
+        return self.release
+
+    def release(self):
+        self.on_event = None
+        self.releases += 1
+
+    def tap(self, *keycodes):
+        """Press every key in order, then release them in reverse."""
+        for code in keycodes:
+            self.on_event(code, True)
+        for code in reversed(keycodes):
+            self.on_event(code, False)
+
+
 @pytest.fixture
 def window(qt_app, paths):
     store = ConfigStore(paths / "config.json")
+    capture = FakeCapture()
     win = SettingsWindow(store, tokens=tokens("dark"),
-                         devices=["Rode NT-USB Mini", "Realtek HD Audio"])
+                         devices=["Rode NT-USB Mini", "Realtek HD Audio"],
+                         capture_keys=capture)
+    win.capture = capture
     win.ctx.vocab_path = paths / "vocabulary.json"
     win.ctx.snippets_path = paths / "snippets.json"
     win.ctx.config_path = paths / "config.json"
@@ -284,20 +311,65 @@ def test_a_live_field_carries_no_restart_badge(window):
     assert "restarts" not in window.general.autostart.accessibleDescription()
 
 
-def test_a_hotkey_is_written_on_commit_not_per_keystroke(window):
-    window.hotkeys.hotkey.setText("<ctrl>+<alt>")
-    assert written(window)["hotkey"] == Config().hotkey      # nothing yet
-    window.hotkeys.hotkey.editingFinished.emit()
+CTRL_L, CTRL_R, ALT_L, WIN_L, F9, KEY_A = 0xA2, 0xA3, 0xA4, 0x5B, 0x78, ord("A")
+
+
+def test_a_hotkey_is_recorded_not_typed(window):
+    """Click, press the keys, let go: the chord is written in the stored
+    syntax and shown in the platform's words (#63). Nothing is written while
+    keys are still down, and the listener is handed back before the commit
+    that rebuilds it."""
+    button = window.hotkeys.hotkey
+    assert button.text() == "Ctrl+Win"
+    button.click()
+    assert button.recording and button.text() == "Press your keys…"
+    window.capture.on_event(ALT_L, True)
+    window.capture.on_event(CTRL_L, True)
+    window.capture.on_event(ALT_L, False)
+    assert written(window)["hotkey"] == Config().hotkey      # Ctrl still down
+    window.capture.on_event(CTRL_L, False)
     assert written(window)["hotkey"] == "<ctrl>+<alt>"
+    assert button.text() == "Ctrl+Alt" and not button.recording
+    assert window.capture.releases == 1
 
 
-def test_an_invalid_chord_is_flagged_inline_and_never_written(window):
-    """An unparseable chord has no meaning to preserve, and writing it would
-    leave the user with no way to dictate."""
-    window.hotkeys.hotkey.setText("<nonsense>")
-    assert shown(window.hotkeys.error)
-    window.hotkeys.hotkey.editingFinished.emit()
+def test_escape_or_a_second_click_cancels_a_recording(window):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    button = window.hotkeys.hotkey
+    button.click()
+    window.capture.on_event(CTRL_L, True)
+    QTest.keyClick(button, Qt.Key.Key_Escape)
+    assert not button.recording and button.text() == "Ctrl+Win"
+    assert window.capture.releases == 1
+    button.click()
+    button.click()
+    assert not button.recording and window.capture.releases == 2
     assert written(window)["hotkey"] == Config().hotkey
+
+
+def test_keys_that_are_not_a_hotkey_are_explained_and_nothing_is_written(window):
+    """A letter alone would fire while typing; the old chord stays and the
+    line says why — never a modal (CONTEXT.md)."""
+    button = window.hotkeys.cleanup_hotkey
+    button.click()
+    window.capture.tap(KEY_A)
+    assert shown(window.hotkeys.error) and "alone" in window.hotkeys.error.text()
+    assert written(window)["cleanup_hotkey"] == Config().cleanup_hotkey
+    assert button.text() == "Ctrl+Shift+Alt"
+    button.click()
+    window.capture.tap(F9)                    # a function key alone is fine
+    assert written(window)["cleanup_hotkey"] == "f9"
+    assert not shown(window.hotkeys.error)
+
+
+def test_the_side_switch_records_the_modifier_that_was_pressed(window):
+    window.hotkeys.sided.setChecked(True)
+    window.hotkeys.hotkey.click()
+    window.capture.tap(CTRL_R, WIN_L)
+    assert written(window)["hotkey"] == "<rctrl>+<lcmd>"
+    assert window.hotkeys.hotkey.text() == "Right Ctrl+Left Win"
 
 
 def test_the_repeating_spinbox_coalesces_and_flushes_on_close(window):

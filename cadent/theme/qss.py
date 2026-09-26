@@ -155,6 +155,10 @@ QPushButton#Accent:hover {
         stop:0 ${accent_fill_hover_a}, stop:1 ${accent_fill_hover_b}); }
 QPushButton#Accent:disabled { background: ${field}; color: ${text_faint}; }
 QPushButton#Danger { border-color: ${danger}; color: ${danger}; }
+/* The chord recorder while it listens (#63): accent border, no hover swap. */
+QPushButton#ChordRecorder[recording="true"],
+QPushButton#ChordRecorder[recording="true"]:hover {
+    border-color: ${accent_fill_a}; color: ${accent_text}; }
 QPushButton#Link { border: none; padding: 2px 4px; color: ${accent_text};
     font-size: ${fs_desc}pt; text-align: left; }
 QPushButton#Link:hover { color: ${accent_fill_a}; }

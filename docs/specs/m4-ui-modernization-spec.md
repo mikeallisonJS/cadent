@@ -490,7 +490,7 @@ Today's single green bar maps `min(1.0, level * 12)` — an unexplained gain con
 | Group | Pane | Cards |
 |---|---|---|
 | **WORKSPACE** | General | **Setup** (re-run the wizard, §6.4 — first card since [#110](https://github.com/mikeallisonJS/cadent/issues/110)) · Basics (autostart · microphone · **Appearance** §5.3) · Overlay (§4.6/§4.8 controls) |
-| | Hotkeys | one card: dictation hotkey, mode, flow-toggle, with inline validity |
+| | Hotkeys | one card: dictation hotkey, mode, flow-toggle, left/right switch. Chords are **recorded** — click the chord, press the keys, let go — through the live hotkey listener, never typed (#63); keys that cannot be a hotkey are explained inline |
 | **TEXT** | Speech & cleanup | Speech recognition (model) · AI cleanup (flow mode, cleanup model) |
 | | Vocabulary & snippets | two cards, §5.4 |
 | | App overrides | per-app injection table, §5.5 |

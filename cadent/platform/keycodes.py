@@ -36,8 +36,8 @@ _VK_GROUPS: dict[str, frozenset[int]] = {
     "<cmd>": frozenset({0x5B, 0x5C}),           # VK_LWIN, VK_RWIN
     # The low-level hook reports the sided VKs, never the generic ones, so a
     # single-VK group is exactly one physical key.
-    **_sided({"ctrl": (0xA2, 0xA3), "shift": (0xA0, 0xA1),
-              "alt": (0xA4, 0xA5), "cmd": (0x5B, 0x5C)}),
+    **_sided(_VK_SIDES := {"ctrl": (0xA2, 0xA3), "shift": (0xA0, 0xA1),
+                           "alt": (0xA4, 0xA5), "cmd": (0x5B, 0x5C)}),
 }
 
 # What a synthetic chord presses for each modifier name (SendInput wants the
@@ -54,6 +54,7 @@ WIN32_KEYCODES = KeycodeTable(
     # narrowing: garbage now raises at parse like any other unknown part.
     function_keys={f"f{n}": 0x70 + n - 1 for n in range(1, 25)},
     ord_fallback=True,
+    sides=_VK_SIDES,
 )
 
 # Carbon/CGEvent codes (HIToolbox Events.h, kVK_ANSI_*): layout positions on
@@ -94,7 +95,8 @@ _CARBON_GROUPS: dict[str, frozenset[int]] = {
     "<shift>": frozenset({56, 60}),
     "<alt>": frozenset({58, 61}),
     "<cmd>": frozenset({55, 54}),
-    **_sided({"ctrl": (59, 62), "shift": (56, 60), "alt": (58, 61), "cmd": (55, 54)}),
+    **_sided(_CARBON_SIDES := {"ctrl": (59, 62), "shift": (56, 60),
+                               "alt": (58, 61), "cmd": (55, 54)}),
 }
 
 DARWIN_KEYCODES = KeycodeTable(
@@ -103,4 +105,5 @@ DARWIN_KEYCODES = KeycodeTable(
     chars=_CARBON_CHARS,
     function_keys=_CARBON_FUNCTION_KEYS,
     ord_fallback=False,
+    sides=_CARBON_SIDES,
 )

@@ -17,6 +17,7 @@ Implements the resolved "Hotkey capture mechanism" decisions:
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from enum import Enum, auto
 from typing import TYPE_CHECKING
 
@@ -95,6 +96,63 @@ def _caption(part: str, captions: Mapping[str, str]) -> str:
         if base is not None:
             return f"{word} {captions[base]}"
     return part.upper()
+
+
+@dataclass(frozen=True)
+class Recorded:
+    """What a finished recording came to: a chord in the stored syntax, or
+    why the keys pressed cannot be one — in the user's words, for the pane."""
+
+    chord: str | None = None
+    problem: str | None = None
+
+
+UNKNOWN_KEY = ("That key can't be part of a hotkey — use modifier keys with a "
+               "letter, digit or function key.")
+TWO_KEYS = "Hold one key with the modifiers, not two."
+LONE_KEY = ("A letter or digit alone would fire while you type — hold a "
+            "modifier with it, or use a function key.")
+
+
+class ChordRecorder:
+    """Turns the keys a user physically presses into stored chord syntax —
+    parse_combo's inverse (#63). Feed it the tap's raw events; it answers on
+    the release that leaves nothing held, with what those keys spell.
+
+    Press order does not matter: modifiers come out in the table's canonical
+    order with the key last, so recording Alt then Ctrl still writes
+    "<ctrl>+<alt>". Both Ctrls pressed is one "<ctrl>". A key pressed before
+    recording began and released during it is nobody's business.
+    """
+
+    def __init__(self, table: KeycodeTable, sided: bool = False) -> None:
+        self._table = table
+        self._sided = sided
+        self._down: set[int] = set()
+        self._pressed: dict[int, str | None] = {}    # press order, one entry per key
+
+    def on_event(self, keycode: int, is_down: bool) -> Recorded | None:
+        if is_down:
+            self._down.add(keycode)
+            self._pressed.setdefault(keycode, self._table.part_for(keycode, self._sided))
+            return None
+        self._down.discard(keycode)
+        if self._down or not self._pressed:
+            return None
+        parts, self._pressed = list(dict.fromkeys(self._pressed.values())), {}
+        return self._spell(parts)
+
+    def _spell(self, parts: list[str | None]) -> Recorded:
+        if None in parts:
+            return Recorded(problem=UNKNOWN_KEY)
+        ranked = [(self._table.modifier_rank(p), p) for p in parts]
+        modifiers = sorted((r, p) for r, p in ranked if r is not None)
+        keys = [p for r, p in ranked if r is None]
+        if len(keys) > 1:
+            return Recorded(problem=TWO_KEYS)
+        if not modifiers and keys[0] not in self._table.function_keys:
+            return Recorded(problem=LONE_KEY)
+        return Recorded(chord="+".join([p for _r, p in modifiers] + keys))
 
 
 class TapChord:

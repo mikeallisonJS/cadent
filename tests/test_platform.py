@@ -88,6 +88,26 @@ def test_a_chord_part_can_name_one_side_of_a_modifier():
     assert parse_combo("<ctrl>", WIN32_KEYCODES) == [frozenset({0x11, 0xA2, 0xA3})]
 
 
+def test_a_physical_key_names_itself_back():
+    """`part_for` is `group_for`'s inverse, for the recorder (#63): a
+    modifier writes its either-side name, or the side pressed when asked; a
+    key no chord can name is None rather than an `ord` guess."""
+    assert WIN32_KEYCODES.part_for(0xA3) == "<ctrl>"
+    assert WIN32_KEYCODES.part_for(0xA3, sided=True) == "<rctrl>"
+    assert WIN32_KEYCODES.part_for(0x5B, sided=True) == "<lcmd>"
+    assert WIN32_KEYCODES.part_for(ord("J")) == "j"
+    assert WIN32_KEYCODES.part_for(0x78) == "f9"
+    assert WIN32_KEYCODES.part_for(0xBA) is None            # VK_OEM_1, the ; key
+    assert DARWIN_KEYCODES.part_for(54) == "<cmd>"
+    assert DARWIN_KEYCODES.part_for(54, sided=True) == "<rcmd>"
+    assert DARWIN_KEYCODES.part_for(122) == "f1"
+    assert DARWIN_KEYCODES.part_for(0) == "a"
+    for part in ("<ctrl>", "<lctrl>", "<rctrl>"):
+        assert WIN32_KEYCODES.modifier_rank(part) == 0
+    assert WIN32_KEYCODES.modifier_rank("<cmd>") == 3
+    assert WIN32_KEYCODES.modifier_rank("f9") is None
+
+
 def test_win32_table_keeps_the_ord_fallback():
     """Hand-edited configs could always name any single character; the VK for
     A-Z/0-9 is its ASCII uppercase code, and the table keeps that contract."""

@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import sys
 import threading
+from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -901,13 +902,22 @@ class CadentApp:
 
     # ---- settings ----------------------------------------------------------
 
+    def _capture_keys(self, on_event) -> Callable[[], None]:
+        """Settings ▸ Hotkeys recording a chord (#63): the live listener's raw
+        events go to the recorder instead of the chords, so the keys being
+        pressed cannot start a dictation. Bound to the listener running *now*;
+        the recorder lets go before the commit that rebuilds it."""
+        self.ptt.capture(on_event)
+        return self.ptt.release_capture
+
     def _show_settings(self, pane: str | None = None) -> None:
         if self.settings_window is None or not self.settings_window.isVisible():
             self.settings_window = SettingsWindow(
                 self.store, tokens=self.theme.tokens,
                 devices=self._input_devices(), history=self.history,
                 high_contrast=self.theme.high_contrast,
-                mic_monitor=self.mic_monitor)
+                mic_monitor=self.mic_monitor,
+                capture_keys=self._capture_keys)
             self.settings_window.applied.connect(self._on_setting_applied)
             self.settings_window.theme_requested.connect(self._on_theme_preference)
             self.settings_window.wizard_requested.connect(self._run_wizard)
