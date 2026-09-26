@@ -111,7 +111,12 @@ Release, for everyone downloading it directly, and to a Cloudflare R2 bucket
 behind `downloads.mikeallisonjs.com`, which is what a submission points at.
 The R2 step verifies the public URL answers `200` rather than a redirect
 before the build goes green, so a broken submission URL fails the release
-instead of failing certification.
+instead of failing certification. It only runs for a signed installer — R2
+secrets without signing secrets fail the tagged build rather than publish
+something the Store would reject — and the upload is a conditional write, so
+rerunning a tag whose package is already in the bucket fails instead of
+replacing bytes behind a URL that may already be in a submission. Different
+bytes mean a new version.
 
 That host must stay a custom domain. R2's built-in `pub-<hash>.r2.dev` address
 is rate-limited, returns `429` under load, and Cloudflare says outright it is

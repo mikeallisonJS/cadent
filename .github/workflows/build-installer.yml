@@ -22,7 +22,8 @@
 # nobody downloads. See scripts/sign_windows.py.
 #
 # Tag builds also publish the signed installer to Cloudflare R2, gated the same
-# way on five more secrets. The Microsoft Store cannot be given the GitHub
+# way on five more secrets - and on signing having happened, since an unsigned
+# installer has no business at a Store submission URL. The Microsoft Store cannot be given the GitHub
 # release URL: release assets answer 302 and redirect to a signed link that
 # expires within the hour, and Partner Center requires a direct, unchanging
 # one. The release asset stays exactly as it is for people downloading it
@@ -292,6 +293,10 @@ jobs:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
           R2_PUBLIC_HOST: ${{ secrets.R2_PUBLIC_HOST }}
+          SIGNED: ${{ steps.signing.outputs.signed }}
+          # Through env rather than interpolated into the script: the tag name
+          # is user-controlled text, and this step holds bucket credentials.
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           # The Microsoft Store will not take the GitHub release URL: release
           # assets answer 302 and redirect to a signed URL that expires within
@@ -318,17 +323,38 @@ jobs:
             exit 1
           }
 
+          # The only reason this URL exists is a Store submission, and the
+          # Store rejects an unsigned installer - so R2 secrets without
+          # signing secrets is a misconfiguration, not a release.
+          if ($env:SIGNED -ne 'true') {
+            Write-Host "::error::R2 secrets are set but the installer is unsigned - add the AZURE_SIGN_* secrets. Nothing was published."
+            exit 1
+          }
+
           $installer = (Get-Item dist/installer/*.exe)
-          $version = "${{ steps.version.outputs.version }}"
           # Namespaced under the app: the bucket and its downloads host are
           # shared with other projects, so nothing here may claim the root.
-          $key = "cadent/v$version/$($installer.Name)"
+          $key = "cadent/v$env:VERSION/$($installer.Name)"
 
-          aws s3 cp $installer.FullName "s3://$env:R2_BUCKET/$key" `
-            --endpoint-url "https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com" `
-            --content-type "application/octet-stream"
+          # A versioned URL promises Partner Center that its bytes never
+          # change, so the write is conditional on the key not existing: a
+          # rerun of an already-published tag fails here instead of quietly
+          # swapping the binary under a submitted URL. Cutting a new tag is
+          # the only way to publish different bytes. (s3api rather than s3 cp
+          # because only the former exposes If-None-Match.)
+          $output = aws s3api put-object `
+            --bucket $env:R2_BUCKET `
+            --key $key `
+            --body $installer.FullName `
+            --if-none-match '*' `
+            --content-type "application/octet-stream" `
+            --endpoint-url "https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com" 2>&1
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "::error::upload to R2 failed"
+            if ("$output" -match 'PreconditionFailed') {
+              Write-Host "::error::$key already exists in R2 and versioned packages are immutable. Publish a new version instead of rerunning this tag."
+            } else {
+              Write-Host "::error::upload to R2 failed: $output"
+            }
             exit 1
           }
 
