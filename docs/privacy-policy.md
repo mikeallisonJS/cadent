@@ -9,7 +9,8 @@ telemetry, tracking, or account of any kind.
 
 ## What Cadent does not do
 
-- **No account.** Cadent has no sign-in, no user profile, and no server.
+- **No account.** Cadent has no sign-in, no user profile, and no backend of
+  its own — there is no Cadent server for your data to be sent to.
 - **No telemetry or analytics.** Cadent contains no analytics SDK, crash
   reporter, usage tracker, or error-reporting service.
 - **No advertising**, and no sharing or selling of data to anyone.
@@ -48,9 +49,10 @@ to the internet in exactly two situations, both of which you start:
    progress while it runs, and lets you cancel. Until you choose a model, no
    download happens.
 2. **Downloading the optional GPU support pack**, from the Python Package Index
-   (`pypi.org`). This is offered only if your computer has an NVIDIA graphics
-   card that could speed up transcription, it is never installed
-   automatically, and you can undo it by deleting the `cuda` folder.
+   (`pypi.org`, which serves the files themselves from
+   `files.pythonhosted.org`). This is offered only if your computer has an
+   NVIDIA graphics card that could speed up transcription, it is never
+   installed automatically, and you can undo it by deleting the `cuda` folder.
 
 Both transfers only download files to your computer. Neither uploads your
 audio, your transcripts, your settings, your history, or any account or
@@ -84,8 +86,10 @@ applications.
 Cadent is a general-purpose utility and is not directed at children.
 
 Cadent does save what you dictate — but only to your own computer, in the
-files listed above. It is never transmitted to us or to anyone else, because
-there is nowhere for it to go. That is true of every user, children included:
+files listed above. It is never transmitted to us or to anyone else: Cadent
+has no backend of its own, and the only servers it ever contacts are the
+download hosts named above, which it fetches files from and sends nothing to.
+That is true of every user, children included:
 no personal information is collected from anyone, in the sense of being
 received by us, and deleting the data folder removes what is stored locally.
 
