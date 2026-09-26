@@ -132,3 +132,8 @@ escaping a platform adapter. Adapter-internal tests skip themselves on the OS
 they don't belong to.
 
 Build order (matches PRD milestones): get the M0 loop working end-to-end first (`hotkey → record → transcribe → inject`), then overlay/tray/history, then cleanup.
+
+## License
+
+MIT — see [LICENSE](LICENSE). The speech and cleanup models Cadent downloads
+carry their own licences, listed in [NOTICE](NOTICE).
