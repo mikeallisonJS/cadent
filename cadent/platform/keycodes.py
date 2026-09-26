@@ -10,12 +10,34 @@ from __future__ import annotations
 
 from .base import KeycodeTable
 
+
+def _sided(sides: dict[str, tuple[int, int]]) -> dict[str, frozenset[int]]:
+    """One side of a modifier as a chord part of its own (#64).
+
+    Right Cmd or right Ctrl alone collides with nothing, which makes it a
+    common push-to-talk pick; the unsided `<ctrl>` keeps meaning either side.
+    Two spellings per side: `<rctrl>` and pynput's `<ctrl_r>`. The second is
+    what a user who has seen pynput's hotkey syntax reaches for first, and a
+    hand-edited config is where a side gets chosen today (#68).
+    """
+    groups: dict[str, frozenset[int]] = {}
+    for name, (left, right) in sides.items():
+        for side, code in (("l", left), ("r", right)):
+            groups[f"<{side}{name}>"] = frozenset({code})
+            groups[f"<{name}_{side}>"] = frozenset({code})
+    return groups
+
+
 # Virtual-key groups: a chord part matches if any VK in its group is down.
 _VK_GROUPS: dict[str, frozenset[int]] = {
     "<ctrl>": frozenset({0x11, 0xA2, 0xA3}),    # VK_CONTROL, VK_LCONTROL, VK_RCONTROL
     "<shift>": frozenset({0x10, 0xA0, 0xA1}),
     "<alt>": frozenset({0x12, 0xA4, 0xA5}),
     "<cmd>": frozenset({0x5B, 0x5C}),           # VK_LWIN, VK_RWIN
+    # The low-level hook reports the sided VKs, never the generic ones, so a
+    # single-VK group is exactly one physical key.
+    **_sided({"ctrl": (0xA2, 0xA3), "shift": (0xA0, 0xA1),
+              "alt": (0xA4, 0xA5), "cmd": (0x5B, 0x5C)}),
 }
 
 # What a synthetic chord presses for each modifier name (SendInput wants the
@@ -72,6 +94,7 @@ _CARBON_GROUPS: dict[str, frozenset[int]] = {
     "<shift>": frozenset({56, 60}),
     "<alt>": frozenset({58, 61}),
     "<cmd>": frozenset({55, 54}),
+    **_sided({"ctrl": (59, 62), "shift": (56, 60), "alt": (58, 61), "cmd": (55, 54)}),
 }
 
 DARWIN_KEYCODES = KeycodeTable(

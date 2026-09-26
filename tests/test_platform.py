@@ -75,6 +75,19 @@ def test_win32_table_parses_the_default_combos():
     assert parse_combo("<ctrl>+j", WIN32_KEYCODES)[-1] == frozenset({ord("J")})
 
 
+def test_a_chord_part_can_name_one_side_of_a_modifier():
+    """Right Cmd alone collides with nothing, so it is a common push-to-talk
+    pick (#64). Both spellings — `<rctrl>` and pynput's `<ctrl_r>`, the one a
+    Store user actually wrote into config.json (#68) — name one physical key
+    on each table; the unsided part keeps meaning either side."""
+    assert parse_combo("<rctrl>", WIN32_KEYCODES) == [frozenset({0xA3})]
+    assert parse_combo("<ctrl_r>+<cmd>", WIN32_KEYCODES) ==         [frozenset({0xA3}), frozenset({0x5B, 0x5C})]
+    assert parse_combo("<lshift>+<ralt>+<lcmd>", WIN32_KEYCODES) ==         [frozenset({0xA0}), frozenset({0xA5}), frozenset({0x5B})]
+    assert parse_combo("<cmd_r>", DARWIN_KEYCODES) == [frozenset({54})]
+    assert parse_combo("<lctrl>+<rshift>+<alt_l>", DARWIN_KEYCODES) ==         [frozenset({59}), frozenset({60}), frozenset({58})]
+    assert parse_combo("<ctrl>", WIN32_KEYCODES) == [frozenset({0x11, 0xA2, 0xA3})]
+
+
 def test_win32_table_keeps_the_ord_fallback():
     """Hand-edited configs could always name any single character; the VK for
     A-Z/0-9 is its ASCII uppercase code, and the table keeps that contract."""

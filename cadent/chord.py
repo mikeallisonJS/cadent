@@ -73,8 +73,28 @@ def describe_combo(combo: str, captions: Mapping[str, str] | None = None) -> str
         part = part.strip().strip("<>")
         if not part:
             continue
-        parts.append(captions.get(part, part.upper()))
+        parts.append(_caption(part, captions))
     return "+".join(parts)
+
+
+_SIDE_WORDS = {"l": "Left", "r": "Right"}
+
+
+def _caption(part: str, captions: Mapping[str, str]) -> str:
+    """One bare part's words. A sided part (`rctrl`, `ctrl_r`, #64) is the
+    side word plus the platform's caption for the modifier it sides — the
+    caption tables stay a list of modifiers, not of modifiers times sides."""
+    if part in captions:
+        return captions[part]
+    for side, word in _SIDE_WORDS.items():
+        base = None
+        if part.startswith(side) and part[1:] in captions:
+            base = part[1:]
+        elif part.endswith(f"_{side}") and part[:-2] in captions:
+            base = part[:-2]
+        if base is not None:
+            return f"{word} {captions[base]}"
+    return part.upper()
 
 
 class TapChord:
