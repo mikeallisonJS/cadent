@@ -276,3 +276,29 @@ def test_a_mac_authored_option_reads_as_alt_on_win32():
     from cadent.chord import describe_combo
 
     assert describe_combo("<ctrl>+<option>", WIN32_CAPTIONS) == "Ctrl+Alt"
+
+
+def test_describe_combo_speaks_the_side_in_the_platforms_words():
+    """A sided part (#64) reads as the side plus what that modifier is called
+    here, in either spelling; the caption tables list modifiers, not sides."""
+    from cadent.chord import describe_combo
+
+    assert describe_combo("<rctrl>+<cmd>", WIN32_CAPTIONS) == "Right Ctrl+Win"
+    assert describe_combo("<ctrl_r>+<cmd>", WIN32_CAPTIONS) == "Right Ctrl+Win"
+    assert describe_combo("<cmd_r>", DARWIN_CAPTIONS) == "Right Cmd"
+    assert describe_combo("<lalt>+<ralt>", DARWIN_CAPTIONS) == "Left Option+Right Option"
+    # A bare "r" is a key, not a side of nothing.
+    assert describe_combo("<ctrl>+r", WIN32_CAPTIONS) == "Ctrl+R"
+
+
+def test_a_sided_chord_hears_that_side_only():
+    """The chord machine already works on keycode sets, so a side is a
+    one-element group: left Ctrl under a `<rctrl>` chord is just another
+    key, and right Ctrl starts a hold on its own."""
+    CTRL_R = 0xA3
+    sm = ChordStateMachine("<rctrl>", "hold", min_hold_s=0.2)
+    assert sm.on_event(CTRL_L, True, False, 0.0) == []
+    assert sm.on_event(CTRL_L, False, False, 0.1) == []
+    acts = sm.on_event(CTRL_R, True, False, 1.0)
+    assert Action.START in acts
+    assert sm.on_event(CTRL_R, False, False, 2.0) == [Action.STOP]
