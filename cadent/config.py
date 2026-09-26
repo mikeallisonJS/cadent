@@ -14,6 +14,8 @@ from pathlib import Path
 
 from platformdirs import user_data_dir
 
+from .chord import parse_combo
+
 APP_NAME = "Cadent"
 DATA_DIR = Path(user_data_dir(APP_NAME, appauthor=False))
 CONFIG_PATH = DATA_DIR / "config.json"
@@ -270,6 +272,18 @@ def _sanitize(cfg: Config, supplied: dict) -> tuple[Config, list[SanitizeIssue]]
         reset("input_device", None)
     if cfg.hotkey_mode not in ("hold", "toggle", "tap_or_hold"):
         reset("hotkey_mode", defaults.hotkey_mode)
+    # The chords are the one place a typo *could* brick the app: an
+    # unparseable `hotkey` used to raise out of the listener's constructor
+    # before the tray existed, leaving a Windows exception dialog and no way
+    # back but a hand edit (#68). Judged against this platform's table, since
+    # what a part names is an OS fact — and reset like anything else, so the
+    # pane can say what the file said and what ran instead.
+    table = _capabilities().keycode_table
+    for name in ("hotkey", "cleanup_hotkey"):
+        try:
+            parse_combo(getattr(cfg, name), table)
+        except ValueError:
+            reset(name, getattr(defaults, name))
     if cfg.theme not in ("system", "light", "dark"):
         reset("theme", defaults.theme)
     # Engine before runtime: the runtime is only meaningful relative to the

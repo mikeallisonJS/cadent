@@ -23,7 +23,6 @@ from . import config as cfg
 from . import platform as platform_pkg
 from . import settings as settings_logic
 from .audio import LevelMonitor, Recorder
-from .chord import parse_combo
 from .cleanup import Cleaner, CleanerLifecycle, hf_repo_for
 from .config_store import ConfigStore
 from .history import History
@@ -444,28 +443,18 @@ class CadentApp:
         threading.Thread(target=self._load_stt, daemon=True).start()
 
     def _make_ptt(self) -> PushToTalk:
+        # Both chords parse by construction: config.parse sanitized them
+        # against this platform's table (#68). The config key stays
+        # `cleanup_hotkey`: renaming it would rewrite a file the user may have
+        # hand-edited, to no benefit anyone can see (#113).
         return PushToTalk(self.config.hotkey, self.config.hotkey_mode,
                           self._on_start, self._on_stop, self._on_discard,
                           self.config.min_hold_ms / 1000,
-                          cleanup_combo=self._valid_cleanup_combo(),
+                          cleanup_combo=self.config.cleanup_hotkey,
                           on_cleanup_toggle=self.bridge.cleanup_hotkey.emit,
                           platform=self.platform)
 
     # ---- cleanup / LLM lifecycle -----------------------------------------
-
-    def _valid_cleanup_combo(self) -> str | None:
-        """The tap chord, or None if config.json names an unparseable one.
-
-        The config key stays `cleanup_hotkey`: renaming it would rewrite a file
-        the user may have hand-edited, to no benefit anyone can see (#113).
-        """
-        try:
-            parse_combo(self.config.cleanup_hotkey)
-            return self.config.cleanup_hotkey
-        except ValueError:
-            log.warning("invalid cleanup_hotkey %r; toggle via tray only",
-                        self.config.cleanup_hotkey)
-            return None
 
     def _ensure_llm_model(self) -> None:
         """Download the cleanup model on first use — disclosed, M1 pattern.
