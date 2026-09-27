@@ -1,0 +1,98 @@
+# Submit a released version to the Microsoft Store. Called by
+# build-installer.yml once a tag build has signed the installer and published
+# it to R2, and runnable by hand for a version that is already there — which
+# is also the retry path, because rerunning the build itself cannot be: R2
+# refuses to overwrite a published package.
+#
+# Its own job on its own runner rather than a step in the build, so the
+# Partner Center credentials are never in the environment of a job that
+# installs and executes the app's whole dependency tree.
+#
+# Secret-gated in the same three states as signing and R2: none skips, a
+# partial set fails, all five submit.
+#
+#   STORE_TENANT_ID      the Entra tenant associated with the Partner Center account
+#   STORE_CLIENT_ID      Entra application added to Partner Center with the Manager role
+#   STORE_CLIENT_SECRET  a client secret for that application
+#   STORE_SELLER_ID      Partner Center seller id (Account settings > Legal info)
+#   STORE_PRODUCT_ID     the app's Store ID from Product identity
+#
+# Plus R2_PUBLIC_HOST, which build-installer.yml already documents: the
+# package URL is rebuilt from it here rather than passed in, because GitHub
+# drops a job output that contains a secret's value.
+#
+# The API can only update an app whose first submission a human has already
+# made in Partner Center. See docs/agents/releases.md.
+
+name: store-submit
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Version to submit, without the v
+        required: true
+        type: string
+      require:
+        description: Fail instead of skipping when the STORE_* secrets are unset
+        default: false
+        type: boolean
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to submit, without the v (e.g. 0.7.0). Must already be on R2.
+        required: true
+        type: string
+      require:
+        description: Fail instead of skipping when the STORE_* secrets are unset
+        default: true
+        type: boolean
+      force:
+        description: Submit even if the draft already points at this version
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# The Store takes one submission at a time; two runs racing would have the
+# second fail on the first's submission at best.
+concurrency: store-submit
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Submit to the Microsoft Store
+        env:
+          STORE_TENANT_ID: ${{ secrets.STORE_TENANT_ID }}
+          STORE_CLIENT_ID: ${{ secrets.STORE_CLIENT_ID }}
+          STORE_CLIENT_SECRET: ${{ secrets.STORE_CLIENT_SECRET }}
+          STORE_SELLER_ID: ${{ secrets.STORE_SELLER_ID }}
+          STORE_PRODUCT_ID: ${{ secrets.STORE_PRODUCT_ID }}
+          R2_PUBLIC_HOST: ${{ secrets.R2_PUBLIC_HOST }}
+          # Through env rather than interpolated into the script: these are
+          # typed by whoever dispatches, and this step holds Store credentials.
+          VERSION: ${{ inputs.version }}
+          REQUIRE: ${{ inputs.require }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must look like 1.2.3, got '$VERSION'"
+            exit 1
+          fi
+          if [ -z "$R2_PUBLIC_HOST" ]; then
+            if [ "$REQUIRE" = "true" ]; then
+              echo "::error::R2_PUBLIC_HOST is unset, so there is no package URL to submit."
+              exit 1
+            fi
+            echo "No R2_PUBLIC_HOST - skipping. Nothing was published for the Store to fetch."
+            exit 0
+          fi
+
+          args=(--url "https://$R2_PUBLIC_HOST/cadent/v$VERSION/Cadent-Setup-$VERSION.exe")
+          [ "$REQUIRE" = "true" ] && args+=(--require)
+          [ "$FORCE" = "true" ] && args+=(--force)
+          python3 scripts/store_submit.py "${args[@]}"

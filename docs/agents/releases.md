@@ -124,12 +124,39 @@ not for production — and because Partner Center makes the developer
 responsible for maintaining the URL rather than mirroring the binary, it very
 likely serves every Store install and not just the one certification fetch.
 
-Submitting a release is therefore: ship the tag as usual, wait for
-`build-installer.yml` to sign, publish and verify, then point the Partner
-Center submission at the R2 URL it prints in the job summary. A new version
-means a new submission with a new URL — never repointing an old one, which the
-Store forbids, and which the per-version key layout makes awkward to do by
-accident.
+Submitting a release is therefore part of shipping the tag. Once
+`build-installer.yml` has signed, published and verified, its `store` job
+calls `store-submit.yml`, which runs `scripts/store_submit.py` against the
+Store submission API: it points the draft's package at the new R2 URL,
+commits, waits for the Store to fetch and scan the installer, and submits for
+certification. A new version means a new submission with a new URL — never
+repointing an old one, which the Store forbids, and which the per-version key
+layout makes awkward to do by accident.
+
+The job ends when the submission is accepted, not when it is certified.
+Certification takes hours to days and reports by email and in Partner Center;
+a failure there comes back with the policy cited, and is a human's to read.
+
+Only the package URL changes. Languages, architecture and the silent-install
+switches are read from the draft and sent back as they were, and the listing
+is not touched at all — so listing copy, screenshots and "What's new" are
+still edited in Partner Center, from `docs/store-listing.md`.
+
+It is gated on five `STORE_*` secrets, which the workflow header names, in the
+same three states as signing: none skips and leaves the submission to a
+human, a partial set fails. Two things make it refuse rather than guess — a
+submission already in flight, since the Store takes one at a time, and a
+draft holding anything other than exactly one package.
+
+To submit a version by hand, or retry one whose submission failed, dispatch
+`store-submit.yml` with the version: `gh workflow run store-submit.yml -f
+version=X.Y.Z`. Rerunning `build-installer.yml` is not the retry path,
+because R2 refuses the second upload. A rerun finds the draft already pointing
+at the version and does nothing; `-f force=true` submits it anyway, which is
+what a run that died between updating the draft and submitting needs.
 
 Account setup, Azure Artifact Signing provisioning and the first submission
-are one-time human steps: run `scripts/store_setup_wizard.sh`.
+are one-time human steps: run `scripts/store_setup_wizard.sh`. The API cannot
+make that first submission, and cannot update an app until it exists. The
+API's own credentials are a second one-time setup, after the app is in the
+Store: run `scripts/store_api_wizard.sh`.
