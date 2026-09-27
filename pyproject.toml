@@ -1,6 +1,6 @@
 [project]
 name = "cadent"
-version = "0.6.0"
+version = "0.7.0"
 description = "Fully-local push-to-talk AI dictation for Windows and macOS: transcribe, clean up, insert at the cursor"
 requires-python = ">=3.11"
 # SPDX expression (PEP 639), with the text shipped in the wheel and sdist.
