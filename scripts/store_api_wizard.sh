@@ -198,6 +198,11 @@ TOTAL_STAGES=8
 REPO_SLUG="mikeallisonJS/cadent"
 PARTNER_CENTER="https://partner.microsoft.com/dashboard"
 
+# gh reads this wherever a command takes no --repo, which includes the
+# library's `gh secret set`. Without it a fork checkout would receive the
+# secrets while stage 7 checked for them here.
+export GH_REPO="$REPO_SLUG"
+
 banner "Cadent — Microsoft Store submission API"
 
 # ── 1 ─────────────────────────────────────────────────────────────────────

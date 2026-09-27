@@ -386,10 +386,19 @@ jobs:
           "### Store package URL`n``$url``" >> $env:GITHUB_STEP_SUMMARY
           # A flag, not the URL: the URL contains R2_PUBLIC_HOST, and GitHub
           # blanks a job output that carries a secret's value.
-          "published=true" >> $env:GITHUB_OUTPUT
+          #
+          # Stable versions only. A v1.2.3-rc1 tag still builds and publishes
+          # like any other, but a release candidate is not something to put
+          # in front of everyone who has the app from the Store.
+          if ($env:VERSION -match '^\d+\.\d+\.\d+$') {
+            "published=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "$env:VERSION is not a stable X.Y.Z version - not submitting it to the Store."
+          }
 
-  # Only after the URL above is proven, and only when it was published: every
-  # other outcome of that step means there is nothing for the Store to fetch.
+  # Only after the URL above is proven, and only when a stable version was
+  # published: every other outcome of that step means there is nothing for the
+  # Store to fetch, or nothing it should.
   store:
     needs: installer
     if: needs.installer.outputs.published == 'true'
