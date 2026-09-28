@@ -40,6 +40,9 @@
 # Cloudflare rate-limits r2.dev, returns 429 under load, and says outright that
 # it is not for production — and this URL likely serves every Store install,
 # not just Microsoft's one certification fetch.
+#
+# A tag build that published to R2 then hands the version to store-submit.yml,
+# which submits it to the Microsoft Store. That workflow names its own secrets.
 
 name: build-installer
 
@@ -54,6 +57,9 @@ permissions:
 jobs:
   installer:
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      published: ${{ steps.r2.outputs.published }}
     steps:
       - uses: actions/checkout@v4
 
@@ -277,6 +283,7 @@ jobs:
           gh release upload $env:GITHUB_REF_NAME (Get-Item dist/installer/*.exe).FullName --clobber
 
       - name: Publish the installer to R2
+        id: r2
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
@@ -377,3 +384,27 @@ jobs:
 
           Write-Host "Store package URL: $url"
           "### Store package URL`n``$url``" >> $env:GITHUB_STEP_SUMMARY
+          # A flag, not the URL: the URL contains R2_PUBLIC_HOST, and GitHub
+          # blanks a job output that carries a secret's value.
+          #
+          # Stable versions only. A v1.2.3-rc1 tag still builds and publishes
+          # like any other, but a release candidate is not something to put
+          # in front of everyone who has the app from the Store.
+          if ($env:VERSION -match '^\d+\.\d+\.\d+$') {
+            "published=true" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "$env:VERSION is not a stable X.Y.Z version - not submitting it to the Store."
+          }
+
+  # Only after the URL above is proven, and only when a stable version was
+  # published: every other outcome of that step means there is nothing for the
+  # Store to fetch, or nothing it should.
+  store:
+    needs: installer
+    if: needs.installer.outputs.published == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/store-submit.yml
+    with:
+      version: ${{ needs.installer.outputs.version }}
+    secrets: inherit
