@@ -281,7 +281,7 @@ pause
 stage "Partner Center — Cadent's product ID"
 open_url "$PARTNER_CENTER/apps-and-games/overview"
 step "Open Cadent > Product management > Product identity."
-step "Copy the Store ID. For an EXE app it is twelve characters and starts"
+step "Copy the Store ID. For an EXE app it is fourteen characters and starts"
 step "  with XP."
 note "It is also the last path segment of the app's Store link,"
 note "apps.microsoft.com/detail/<this>."
