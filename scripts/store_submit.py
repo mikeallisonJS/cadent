@@ -284,7 +284,14 @@ def submit(client: StoreClient, url: str, *, force: bool = False, **poll) -> str
         return None
 
     print(f"Package URL: {package.get('packageUrl')} -> {url}")
-    client.call("PUT", f"{base}/packages", {"packages": [{**package, "packageUrl": url}]})
+    updated = {**package, "packageUrl": url}
+    # The Store hands the switches back with a space in front that was never
+    # typed, then counts it against its own 40-character limit - which the
+    # three Inno switches meet exactly, so the draft it returned is one it
+    # refuses to take back.
+    if isinstance(updated.get("installerParameters"), str):
+        updated["installerParameters"] = updated["installerParameters"].strip()
+    client.call("PUT", f"{base}/packages", {"packages": [updated]})
     client.call("POST", f"{base}/packages/commit")
 
     print("Waiting for the Store to fetch and scan the installer...", flush=True)

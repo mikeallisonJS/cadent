@@ -122,6 +122,15 @@ class TestSubmit:
         run(store)
         assert store.packages == [package(NEW_URL)]
 
+    def test_drops_the_space_the_store_puts_before_the_switches(self):
+        # What the API really returns, and one character over what it accepts.
+        padded = {**package(), "installerParameters":
+                  " /VERYSILENT /SUPPRESSMSGBOXES /NORESTART"}
+        store = FakeStore(packages=[padded])
+        run(store)
+        assert store.packages[0]["installerParameters"] == \
+            "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART"
+
     def test_sends_the_seller_id_and_token(self):
         store = FakeStore()
         run(store)
