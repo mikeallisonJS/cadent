@@ -490,6 +490,70 @@ def test_an_engine_left_over_from_an_earlier_pick_is_not_kept(app, monkeypatch):
     assert app._stt.model == "second"
 
 
+def test_a_load_with_no_handle_leaves_the_download_to_a_request_that_has_one(
+        app, deferred, monkeypatch):
+    """The startup preload registers only once its probe has missed. A pick
+    made during that probe has registered already, and used to be evicted:
+    the old model downloaded while the new one waited, and Cancel stopped the
+    wrong fetch."""
+    fetched = []
+
+    def make_engine(_engine, model, _device, local_files_only=False):
+        if local_files_only:
+            if model == "first":            # picked while the startup probe runs
+                app.config.stt_model = "second"
+                app._download_speech_model()
+            raise OSError("model is not cached locally")
+        return built_for(model)
+
+    monkeypatch.setattr(app_mod, "make_engine", make_engine)
+    monkeypatch.setattr(stt, "prefetch",
+                        lambda model, download: fetched.append((model, download)))
+    app.config.stt_model = "first"
+
+    assert app._load_stt() == app_mod.CANCELLED     # the startup preload
+    handle = app._downloads[app_mod.SPEECH_MODEL]
+    deferred.run_all()
+
+    assert fetched == [("second", handle)]
+    assert app._stt.model == "second"
+    assert app.tray.messages.count("Cadent — one-time model download") == 1
+
+
+def test_a_superseded_load_that_fails_is_not_reported(app, deferred, monkeypatch):
+    """A failure belongs to the model that failed. Reported after the user
+    moved on, it put a fault on the tray over a model that loaded fine."""
+    def make_engine(_engine, model, _device, local_files_only=False):
+        if model == "first":
+            if local_files_only:
+                raise OSError("model is not cached locally")
+            app.config.stt_model = "second"         # picked mid-load
+            app._download_speech_model()
+            raise RuntimeError("first could not load")
+        return built_for(model)
+
+    monkeypatch.setattr(app_mod, "make_engine", make_engine)
+    monkeypatch.setattr(stt, "prefetch", lambda *_a: True)
+    app.config.stt_model = "first"
+
+    app._download_speech_model()
+    deferred.run_all()
+
+    assert app.bridge.stt_failed.emitted == []
+    assert app._stt.model == "second"
+    assert [o for o, _detail in app.bridge.speech_load_done.emitted] \
+        == [app_mod.LOADED]
+
+
+def test_a_model_loaded_from_disk_clears_an_earlier_failure(app, monkeypatch):
+    """Only the download path used to say the engine came up, so a failed
+    model followed by one already on disk left the fault standing."""
+    monkeypatch.setattr(app_mod, "make_engine",
+                        lambda _e, model, _d, **_kw: built_for(model))
+    assert app._load_stt() == app_mod.LOADED
+    assert app.bridge.stt_loaded.emitted == [()]
+
+
 def test_the_engine_is_kept_while_the_config_still_asks_for_it(app, monkeypatch):
     built = []
     monkeypatch.setattr(app_mod, "make_engine",

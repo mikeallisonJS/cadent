@@ -233,6 +233,9 @@ class CadentApp:
             else:
                 if not self._adopt_stt(engine, request):
                     return CANCELLED
+        # Every fresh engine, not only a downloaded one: a model picked off
+        # disk after an earlier one failed must clear that fault too.
+        self.bridge.stt_loaded.emit()
         if gpu_pack.should_offer(self.config.stt_device,
                                  getattr(self._stt, "device", "cpu"),
                                  stt_engine=self.config.stt_engine,
@@ -276,7 +279,28 @@ class CadentApp:
         performed, which is the exact defect #114 is about. Since the same
         defect lived in the window *before* this call, a speech request now
         arrives with its handle already registered and hands it in here.
+
+        **A load with no handle of its own yields to one that has.** The
+        startup preload, wizard-finish and GPU-pack reloads only register once
+        their probe has missed. A handle already there by then belongs to a
+        request whose worker is waiting on `_stt_lock` and will load whatever
+        config.json asks for now; taking the key over would download a model
+        the user may have moved off and leave their Cancel stopping it instead.
         """
+        claimed = download is None
+        if claimed:
+            download = self._claim(SPEECH_MODEL)
+            if download is None:
+                log.info("speech request already registered; leaving the load to it")
+                return CANCELLED
+        try:
+            return self._fetch_and_load(request, download)
+        finally:
+            if claimed:
+                self._release(SPEECH_MODEL, download)
+
+    def _fetch_and_load(self, request: tuple[str, str, str],
+                        download: downloads.Download) -> str:
         model = request[1]
         self.tray.message(
             "Cadent — one-time model download",
@@ -296,11 +320,15 @@ class CadentApp:
             try:
                 engine = make_engine(*request)
             except Exception as exc:
+                if self._stt_request() != request:
+                    # Its failure is nobody's now: reported, it would raise a
+                    # fault over the model the user moved on to.
+                    log.info("superseded speech model %r failed to load", model)
+                    return CANCELLED
                 self.bridge.stt_failed.emit(str(exc))
                 return FAILED
             if not self._adopt_stt(engine, request):
                 return CANCELLED
-        self.bridge.stt_loaded.emit()
         self.tray.message("Cadent", "Speech model ready — dictate away.",
                           QSystemTrayIcon.MessageIcon.Information, 4_000)
         return LOADED
@@ -316,10 +344,20 @@ class CadentApp:
         flag before its first byte, so a handle taken out this early is one
         that can actually stop something.
         """
-        download = downloads.Download(
-            lambda reading: self.bridge.download_progress.emit(what, reading))
+        download = self._new_download(what)
         self._downloads[what] = download
         return download
+
+    def _claim(self, what: str) -> downloads.Download | None:
+        """Take out a handle only if nobody holds the key; None if somebody
+        does. `setdefault`, so the check and the claim are one step against
+        `_register` on the UI thread."""
+        download = self._new_download(what)
+        return download if self._downloads.setdefault(what, download) is download else None
+
+    def _new_download(self, what: str) -> downloads.Download:
+        return downloads.Download(
+            lambda reading: self.bridge.download_progress.emit(what, reading))
 
     def _release(self, what: str, download: downloads.Download) -> None:
         """Let go of a handle — but only while it is still the registered one.
