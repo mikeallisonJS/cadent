@@ -92,6 +92,11 @@ class CadentApp:
                                  platform=self.platform)
 
         self._stt = None
+        # The `_stt_request()` the engine in `_stt` was built for. A swap
+        # clears `_stt` from the UI thread, outside the lock, so a load that
+        # finished just before can still be sitting there — this says whether
+        # it is the one asked for.
+        self._stt_serves: tuple[str, str, str] | None = None
         self._stt_lock = threading.Lock()
         self._recording = False
         self._max_timer: threading.Timer | None = None
@@ -214,16 +219,20 @@ class CadentApp:
         which is what the startup preload and the #38 recovery do.
         """
         with self._stt_lock:
-            if self._stt is not None:
+            request = self._stt_request()
+            if self._stt is not None and self._stt_serves == request:
                 return LOADED
+            self._stt = None    # left over from a pick the user has moved off
             try:
-                self._stt = make_engine(self.config.stt_engine, self.config.stt_model,
-                                        self.config.stt_device, local_files_only=True)
+                engine = make_engine(*request, local_files_only=True)
             except Exception:
                 # model not on disk yet → explicit, disclosed download
-                outcome = self._download_and_load(download)
+                outcome = self._download_and_load(request, download)
                 if outcome != LOADED:
                     return outcome
+            else:
+                if not self._adopt_stt(engine, request):
+                    return CANCELLED
         if gpu_pack.should_offer(self.config.stt_device,
                                  getattr(self._stt, "device", "cpu"),
                                  stt_engine=self.config.stt_engine,
@@ -231,7 +240,24 @@ class CadentApp:
             self.bridge.gpu_offer.emit()
         return LOADED
 
-    def _download_and_load(self,
+    def _stt_request(self) -> tuple[str, str, str]:
+        """What config.json asks the speech engine to be, in `make_engine`'s
+        argument order."""
+        return self.config.stt_engine, self.config.stt_model, self.config.stt_device
+
+    def _adopt_stt(self, engine, request: tuple[str, str, str]) -> bool:
+        """Install an engine that just finished loading — unless the user
+        picked something else while it loaded. Cancelling a request stops its
+        fetch, not a load already under way, so this is where a superseded
+        load is let go. Called under `_stt_lock`."""
+        if self._stt_request() != request:
+            log.info("speech model %r was superseded mid-load; dropping it",
+                     request[1])
+            return False
+        self._stt, self._stt_serves = engine, request
+        return True
+
+    def _download_and_load(self, request: tuple[str, str, str],
                            download: downloads.Download | None = None) -> str:
         """The disclosed download, pulled in front of the load rather than left
         buried inside it — which is what lets the tray report it and the wizard
@@ -251,27 +277,29 @@ class CadentApp:
         defect lived in the window *before* this call, a speech request now
         arrives with its handle already registered and hands it in here.
         """
+        model = request[1]
         self.tray.message(
             "Cadent — one-time model download",
-            f"Downloading speech model '{self.config.stt_model}' from Hugging Face. "
+            f"Downloading speech model '{model}' from Hugging Face. "
             "This is the only network activity Cadent performs. "
             "Dictation is disabled until it finishes.",
             QSystemTrayIcon.MessageIcon.Information, 10_000)
         with self._watching(SPEECH_MODEL, download) as download:
             try:
-                stt.prefetch(self.config.stt_model, download)
+                stt.prefetch(model, download)
             except downloads.Cancelled:
                 log.info("speech model download stopped by the user")
                 return CANCELLED
             except Exception:
                 log.warning("could not prefetch %r; the engine will download it "
-                            "without progress", self.config.stt_model, exc_info=True)
+                            "without progress", model, exc_info=True)
             try:
-                self._stt = make_engine(self.config.stt_engine, self.config.stt_model,
-                                        self.config.stt_device)
+                engine = make_engine(*request)
             except Exception as exc:
                 self.bridge.stt_failed.emit(str(exc))
                 return FAILED
+            if not self._adopt_stt(engine, request):
+                return CANCELLED
         self.bridge.stt_loaded.emit()
         self.tray.message("Cadent", "Speech model ready — dictate away.",
                           QSystemTrayIcon.MessageIcon.Information, 4_000)
@@ -381,12 +409,16 @@ class CadentApp:
         Dictations meanwhile report not-ready."""
         with self._stt_lock:
             self._stt = None
+            engine_name, model, _device = request = self._stt_request()
             try:
-                self._stt = make_engine(self.config.stt_engine, self.config.stt_model,
-                                        "cpu", local_files_only=True)
+                engine = make_engine(engine_name, model, "cpu", local_files_only=True)
             except Exception as exc:
                 self.bridge.stt_failed.emit(str(exc))
                 return
+            # Adopted as the configured request, not a CPU one: it is that
+            # request's fallback, and the user has not asked for anything else.
+            if not self._adopt_stt(engine, request):
+                return      # a newer pick is loading and will say so itself
         # Same thread-precedent as _load_stt's download toasts.
         self.tray.message("Cadent", "Speech engine restarted on CPU — dictate away.",
                               QSystemTrayIcon.MessageIcon.Information, 4_000)
@@ -972,7 +1004,9 @@ class CadentApp:
             self.cleaner.model_path = self.config.llm_model_path
             self.cleaner.max_tokens = self.config.llm_max_tokens
             self.cleaner.wanted_runtime = self.config.llm_runtime
-            self.cleaner.unload()
+            # No unload here: the lifecycle swaps a superseded model under its
+            # own lock, and one dropped from this thread could be re-taken by
+            # a load still in flight.
             self.llm_lifecycle.set_wanted(self.config.cleanup_mode
                                           and not self.config.paused)
         self.tray.refresh()

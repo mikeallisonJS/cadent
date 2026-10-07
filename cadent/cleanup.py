@@ -160,14 +160,25 @@ class Cleaner:
         self.wanted_runtime = runtime
         self.runtime = None
         self._llm = None
+        # The (model_path, wanted_runtime) the resident model was loaded for.
+        # Both are reassigned from the UI thread, possibly mid-load, so a
+        # model is only the *right* one while these still match.
+        self._loaded_for: tuple[str, str] | None = None
         # Held for the whole life of a generation (released by the worker
         # thread, which a timeout may abandon mid-inference): llama.cpp is not
         # safe to call concurrently, so an overlapping dictation stays raw.
         self._gen_lock = threading.Lock()
 
     @property
-    def ready(self) -> bool:
+    def resident(self) -> bool:
+        """Holding a model in memory — the right one or not."""
         return self._llm is not None
+
+    @property
+    def ready(self) -> bool:
+        """Resident, and still the model config.json asks for."""
+        return (self._llm is not None
+                and self._loaded_for == (self.model_path, self.wanted_runtime))
 
     @property
     def system_prompt(self) -> str:
@@ -189,13 +200,17 @@ class Cleaner:
         Walks the runtime ladder and commits to the first rung that both loads
         *and* generates — see `_warm_up` for why those are two questions.
         """
-        if self._llm is not None:
+        if self.ready:
             return
-        if not self.model_path or not Path(self.model_path).exists():
-            raise FileNotFoundError(f"cleanup model not found: {self.model_path}")
+        self.unload()   # a model the config has moved off: never two resident
+        # Read once: Settings may reassign either mid-load, and the model
+        # must be recorded as what it was loaded for, not what is asked now.
+        model_path, wanted_runtime = self.model_path, self.wanted_runtime
+        if not model_path or not Path(model_path).exists():
+            raise FileNotFoundError(f"cleanup model not found: {model_path}")
         import llama_cpp  # lazy import: heavy
 
-        ladder = RUNTIME_LADDERS.get(self.wanted_runtime, RUNTIME_LADDERS["auto"])
+        ladder = RUNTIME_LADDERS.get(wanted_runtime, RUNTIME_LADDERS["auto"])
         last = ""
         for runtime in ladder:
             if runtime != "cpu" and not llama_cpp.llama_supports_gpu_offload():
@@ -209,7 +224,7 @@ class Cleaner:
                 log.info("no GPU offload available; cleanup skips %s", runtime)
                 continue
             try:
-                llm = self._proved_on(llama_cpp.Llama, runtime)
+                llm = self._proved_on(llama_cpp.Llama, model_path, runtime)
             except Exception as exc:
                 # The message, not the exception: a retained traceback pins the
                 # frame that failed, and with it a multi-gigabyte model we are
@@ -219,12 +234,13 @@ class Cleaner:
                             runtime, exc_info=True)
                 continue
             self._llm = llm
+            self._loaded_for = (model_path, wanted_runtime)
             self.runtime = runtime
             log.info("cleanup model loaded on %s", runtime)
             return
         raise RuntimeError(f"cleanup model could not load on any runtime: {last}")
 
-    def _proved_on(self, llama_cls, runtime: str):
+    def _proved_on(self, llama_cls, model_path: str, runtime: str):
         """A model on `runtime` that has generated a real token, or raise.
 
         Its own frame so that a rung which failed is freed on the way out,
@@ -232,7 +248,7 @@ class Cleaner:
         two copies of a 2.5 GB model resident at once is not a hypothetical.
         """
         llm = llama_cls(
-            model_path=self.model_path,
+            model_path=model_path,
             n_ctx=N_CTX,
             n_threads=_physical_cores(),
             n_gpu_layers=RUNTIME_LAYERS[runtime],
@@ -279,13 +295,17 @@ class Cleaner:
 
     def unload(self) -> None:
         self._llm = None  # llama.cpp buffers are freed with the object
+        self._loaded_for = None
         self.runtime = None
 
     def clean(self, raw: str) -> str:
         """Cleaned text, or `raw` on ANY failure: model not resident, a prior
         generation still in flight, LLM crash, hard timeout, diff-guard
-        rejection. Silent degradation per the charter safety contract."""
-        llm = self._llm
+        rejection. Silent degradation per the charter safety contract.
+
+        A model the config has moved off counts as not resident: its prompt
+        is now derived from the new model's path, and the reload is coming."""
+        llm = self._llm if self.ready else None
         if not raw.strip() or llm is None:
             return raw
         if not self._gen_lock.acquire(blocking=False):
@@ -331,7 +351,10 @@ class CleanerLifecycle:
 
     set_wanted() is cheap and thread-safe; the reconcile loop serializes
     load/unload under one lock and re-checks the flag after every step, so a
-    toggle-off that lands mid-load still ends with the model unloaded.
+    toggle-off that lands mid-load still ends with the model unloaded — and
+    a different model picked mid-load still ends with that one resident, and
+    only that one. A model change therefore needs nothing more than another
+    set_wanted(); unloading from the caller's thread would race the load.
     """
 
     def __init__(self, cleaner: Cleaner,
@@ -351,10 +374,18 @@ class CleanerLifecycle:
         self._wanted = on
         self._spawn(self._reconcile)
 
+    def _settled(self) -> bool:
+        """Wanted means the right model resident; unwanted means nothing
+        resident. A superseded model is neither — it is not ready, and it is
+        still holding gigabytes."""
+        return self.cleaner.ready if self._wanted else not self.cleaner.resident
+
     def _reconcile(self) -> None:
         with self._lock:
-            while self._wanted != self.cleaner.ready:
-                if not self._wanted:
+            while not self._settled():
+                if not self._wanted or self.cleaner.resident:
+                    # Unwanted, or the wrong model: let it go before any
+                    # download of the right one, not after.
                     self.cleaner.unload()
                     continue
                 try:
