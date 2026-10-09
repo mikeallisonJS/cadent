@@ -1,7 +1,7 @@
 """The first-run wizard (spec §6).
 
 Six pages, linear Back/Next with progress dots, ending in a working dictation
-setup. The one consented, user-initiated exception to CONTEXT.md's "toast,
+setup. The one consented, user-initiated exception to GLOSSARY.md's "toast,
 never a prompt": the user asked for setup, so setup gets a window.
 
 Two policies do most of the work here:

@@ -351,7 +351,7 @@ def test_escape_or_a_second_click_cancels_a_recording(window):
 
 def test_keys_that_are_not_a_hotkey_are_explained_and_nothing_is_written(window):
     """A letter alone would fire while typing; the old chord stays and the
-    line says why — never a modal (CONTEXT.md)."""
+    line says why — never a modal (GLOSSARY.md)."""
     button = window.hotkeys.cleanup_hotkey
     button.click()
     window.capture.tap(KEY_A)

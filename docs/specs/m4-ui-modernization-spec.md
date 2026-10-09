@@ -1,7 +1,7 @@
 # Spec: Cadent M4 — UI modernization
 
 Status: ready-for-agent
-Source map: [#58](https://github.com/mikeallisonJS/cadent/issues/58) · Source PRD: [../../PRD.md](../../PRD.md) · Domain: [../../CONTEXT.md](../../CONTEXT.md)
+Source map: [#58](https://github.com/mikeallisonJS/cadent/issues/58) · Source PRD: [../../PRD.md](../../PRD.md) · Domain: [../../GLOSSARY.md](../../GLOSSARY.md)
 
 > Every section below is the settlement of a closed wayfinder ticket. The ticket is the reasoning; this spec is the instruction. Where the two disagree, the ticket's *later* corrections win — they are already folded in here. Section headings carry their source ticket; the full index is at the end.
 
@@ -579,7 +579,7 @@ It matters because **the Notepad row cannot be re-learned**: auto-learn fires on
 
 **Empty state** (reachable only by deleting every row): *"No app rules. Cadent types into every app, and adds a rule automatically if typing fails."* — true, and it quietly teaches auto-learn to someone who never caught the toast.
 
-> **Domain-doc follow-up**: `CONTEXT.md`'s **Learned override** entry says *"later tuning is a hand edit"*. That is accurate today and becomes **false when this pane ships** — amend it in the implementation slice that lands the pane.
+> **Domain-doc follow-up**: `GLOSSARY.md`'s **Learned override** entry says *"later tuning is a hand edit"*. That is accurate today and becomes **false when this pane ships** — amend it in the implementation slice that lands the pane.
 
 ## 5.6 History pane
 
@@ -792,7 +792,7 @@ The seams the decisions actually require, marked accordingly. Organizational pla
 | `packaging/icons/**`, `scripts/build_icons.py` | new (lift from `prototype/mark`) | §2. |
 | `packaging/cadent.spec`, `cadent.iss` | changed | Point at `cadent.ico`. |
 | `pyproject.toml` | changed | `PySide6>=6.8` (§1.2). |
-| `CONTEXT.md` | changed | Amend **Learned override** when §5.5 lands. |
+| `GLOSSARY.md` | changed | Amend **Learned override** when §5.5 lands. |
 
 ---
 
@@ -840,9 +840,9 @@ Good tests exercise external behavior at the seams — never implementation deta
 
 **Prototypes to lift from, not rebuild.** `prototype/design-direction` (the winning language), `prototype/settings-structure` (pane organization), `prototype/wizard-flow` (the paged flow), `prototype/design-tokens` (the token dict, the QSS recipes, and the contrast audit), `prototype/mark` (SVGs, rasters, `.ico`, `build_icons.py`). Research write-ups live on `research/ui-foundation`, `research/dark-mode-chrome`, `research/model-auto-suggestion`, `research/high-contrast-qss`.
 
-**No ADR and no new `CONTEXT.md` terms** are created by this spec. The state ladders and apply semantics are spec detail, not domain vocabulary — the glossary's terms are behavioural concepts. The one glossary change is amending **Learned override** (§5.5).
+**No ADR and no new `GLOSSARY.md` terms** are created by this spec. The state ladders and apply semantics are spec detail, not domain vocabulary — the glossary's terms are behavioural concepts. The one glossary change is amending **Learned override** (§5.5).
 
-**PRD alignment.** This spec is M4, after the PRD's M3 (settings UI, history search, per-app overrides, installer, autostart). It honours PRD §5.7's click-through pill (§4.6), §5.6's retention setting (§5.6), §6's latency budget (§4.1 declines to spend it, §4.6 keeps the paint rate at 30 fps), and §6's disclosure rule (§6.1 page 4, §6.2's GPU pack). `CONTEXT.md`'s "toast, never a prompt" holds throughout: §5.4, §5.5 and §7.2 all use inline error states with actions rather than modals, and the wizard is the one consented, user-initiated exception.
+**PRD alignment.** This spec is M4, after the PRD's M3 (settings UI, history search, per-app overrides, installer, autostart). It honours PRD §5.7's click-through pill (§4.6), §5.6's retention setting (§5.6), §6's latency budget (§4.1 declines to spend it, §4.6 keeps the paint rate at 30 fps), and §6's disclosure rule (§6.1 page 4, §6.2's GPU pack). `GLOSSARY.md`'s "toast, never a prompt" holds throughout: §5.4, §5.5 and §7.2 all use inline error states with actions rather than modals, and the wizard is the one consented, user-initiated exception.
 
 ---
 

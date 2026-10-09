@@ -174,7 +174,7 @@ class Config:
     llm_model_path: str = str(MODELS_DIR / "llm" / "Qwen3-4B-Instruct-2507-Q4_K_M.gguf")
     llm_max_tokens: int = 1024
     # Not `llm_device`, for all that it would pair with `stt_device`:
-    # CONTEXT.md's Runtime term says to avoid "device", and `stt_device`'s
+    # GLOSSARY.md's Runtime term says to avoid "device", and `stt_device`'s
     # spelling is a compatibility debt rather than a pattern to copy.
     llm_runtime: str = "auto"             # "auto" | "cpu" (#116)
 
