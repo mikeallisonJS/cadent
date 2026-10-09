@@ -222,7 +222,7 @@ def link(text: str, on_click: Callable[[], None]) -> QPushButton:
 class Notice(QFrame):
     """A persistent inline message with actions — never a modal.
 
-    CONTEXT.md's "toast, never a prompt" holds throughout: the unreadable
+    GLOSSARY.md's "toast, never a prompt" holds throughout: the unreadable
     config, the malformed vocabulary file and the divergence line are all
     inline error states with actions rather than dialogs.
     """
