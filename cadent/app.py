@@ -16,7 +16,7 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from . import a11y, downloads, gpu_pack, hardware, icons, snippets, stt, vocabulary
@@ -184,6 +184,10 @@ class CadentApp:
         self._setup_tray()
         self.overlay.set_cleanup(self.config.cleanup_mode)
         self.ptt = self._make_ptt()
+        self._permission_timer = QTimer(self.bridge)
+        self._permission_timer.setInterval(2000)
+        self._permission_timer.timeout.connect(self._poll_permission)
+        self._watch_permission()
 
         if self._needs_setup():
             # Dictation is disabled until setup finishes, and the tray carries
@@ -524,6 +528,28 @@ class CadentApp:
                           cleanup_combo=self.config.cleanup_hotkey,
                           on_cleanup_toggle=self.bridge.cleanup_hotkey.emit,
                           platform=self.platform)
+
+    def _restart_ptt(self) -> None:
+        self.ptt.stop()
+        self.ptt = self._make_ptt()
+        self.ptt.start()
+
+    def _watch_permission(self) -> None:
+        """A listener started without the `permission_preflight` grant is deaf
+        and stays deaf after the grant lands — only one built afterwards hears
+        anything. The wizard and Settings poll the grant too, but only while
+        they are on screen, so the app keeps its own watch for the flip."""
+        if self.platform.capabilities.permission_preflight and \
+                not self.platform.focused_app.permission_granted():
+            self._permission_timer.start()
+
+    def _poll_permission(self) -> None:
+        # Health is the grant, never the listener's `running` flag (ADR 0002).
+        if not self.platform.focused_app.permission_granted():
+            return
+        self._permission_timer.stop()
+        log.info("permission granted; restarting the hotkey listener")
+        self._restart_ptt()
 
     # ---- cleanup / LLM lifecycle -----------------------------------------
 
@@ -1029,9 +1055,7 @@ class CadentApp:
             # is the whole restart.
             self.recorder.device = self.config.input_device
         elif engine == "hotkeys":
-            self.ptt.stop()
-            self.ptt = self._make_ptt()
-            self.ptt.start()
+            self._restart_ptt()
         elif engine == "stt":
             # Detach first so dictations report not-ready instead of using the
             # old model (same pattern as the #38 crash recovery). Reported
