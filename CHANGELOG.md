@@ -5,6 +5,13 @@ and are rendered here by the release PR — see `docs/agents/releases.md`.
 
 <!-- towncrier release notes start -->
 
+## v0.7.1 — 2026-10-09
+
+### Fixes
+
+- Picking a different speech or cleanup model while the previous one is still loading now switches to the new model, instead of sometimes keeping the old one in memory until Cadent restarts. The tray also no longer keeps a "model failed" warning once a working speech model has loaded. ([#model-swap-race](https://github.com/mikeallisonJS/cadent/issues/model-swap-race))
+
+
 ## v0.7.0 — 2026-09-26
 
 ### Features
