@@ -6,9 +6,14 @@ from PySide6.QtWidgets import QCheckBox, QComboBox, QSpinBox, QVBoxLayout, QWidg
 
 from .. import a11y, settings
 from .. import platform as platform_pkg
+from ..chord import describe_combo
 from .chord_recorder import ChordRecorderButton
 from .context import PaneContext
 from .widgets import Notice, card, label, page_title, row
+
+# Where the desktop owns the binding (Linux's Wayland tiers, ADR 0008), the
+# recorded chord is a suggestion and what fires is what the desktop reports.
+DESKTOP_OWNS = "Your desktop owns this shortcut — change it in your desktop's settings."
 
 
 class HotkeysPane(QWidget):
@@ -75,7 +80,14 @@ class HotkeysPane(QWidget):
                 hint=settings.restart_hint("min_hold_ms")),
         ]))
         layout.addWidget(self.error)
+        # What the desktop actually bound, where it owns the binding — and
+        # which chord it substituted when the stored one cannot bind there
+        # (a modifiers-only chord on Wayland, spec §4).
+        self.desktop_binding = label("", "RowHint")
+        self.desktop_binding.setVisible(False)
+        layout.addWidget(self.desktop_binding)
         layout.addStretch()
+        self.refresh_bindings()
 
         self.mode.currentIndexChanged.connect(
             lambda _i: ctx.set("hotkey_mode", self.mode.currentData()))
@@ -85,6 +97,30 @@ class HotkeysPane(QWidget):
         self.min_hold.valueChanged.connect(
             lambda value: ctx.set("min_hold_ms", value, coalesce=True))
         self.min_hold.editingFinished.connect(ctx.store.flush)
+
+    def refresh_bindings(self) -> None:
+        bindings = dict(platform_pkg.current().hotkey_tap.bindings())
+        if not bindings:
+            self.desktop_binding.setVisible(False)
+            return
+        caps = platform_pkg.current().capabilities
+        parts = [DESKTOP_OWNS]
+        dictate = bindings.get("dictate")
+        if dictate:
+            if dictate.startswith("<"):
+                parts.append(f"The stored chord can't bind here, so this session uses "
+                             f"{describe_combo(dictate, caps.modifier_captions)}.")
+            else:
+                parts.append(f"Dictation is bound to {dictate}.")
+        cleanup = bindings.get("cleanup")
+        if cleanup:
+            if cleanup.startswith("<"):
+                parts.append(f"Cleanup uses "
+                             f"{describe_combo(cleanup, caps.modifier_captions)}.")
+            else:
+                parts.append(f"Cleanup is bound to {cleanup}.")
+        self.desktop_binding.setText(" ".join(parts))
+        self.desktop_binding.setVisible(True)
 
     # ---- recording outcomes -------------------------------------------------
 

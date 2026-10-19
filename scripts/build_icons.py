@@ -25,6 +25,7 @@ would be the parallel-copy drift ADR 0006 exists to undo.
 
 Run:  uv run python scripts/build_icons.py
 Out:  packaging/icons/png/mark-<state>-<size>.png   (18 files)
+      packaging/icons/png/app-<size>.png            (3 files, the tile for hicolor)
       packaging/icons/cadent.ico                 (multi-size, Ready)
       packaging/icons/cadent.icns                (multi-size, Ready)
 """
@@ -80,6 +81,9 @@ ICNS_TYPES = [
     (b"ic09", 512), (b"ic10", 1024),
 ]
 ICNS_SIZES = sorted({size for _, size in ICNS_TYPES})
+
+# The hicolor sizes the Linux first run installs (ADR 0011).
+HICOLOR_SIZES = [48, 128, 256]
 
 
 def source(state: str, size: int) -> Path:
@@ -198,6 +202,12 @@ def main() -> None:
     # one sitting among monochrome glyphs in a tray.
     ico = ICONS / "cadent.ico"
     write_ico([app_icon(size) for size in SIZES], ico)
+
+    # The tile as loose PNGs for Linux's hicolor theme (ADR 0011): Cadent
+    # installs its own icon on first run, and a theme lookup wants one file
+    # per size rather than a container.
+    for size in HICOLOR_SIZES:
+        app_icon(size).save(str(out / f"app-{size}.png"), "PNG")
 
     # The .app icon (#171). Its own size ladder: the Dock and Finder ask up to
     # 1024, four sizes past anything the tray or the .ico needs, and none of

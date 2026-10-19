@@ -37,6 +37,10 @@ class PushToTalk:
             platform = platform_pkg.current()
         self._tap = platform.hotkey_tap
         self._keyboard = platform.keyboard
+        # Handed to the tap at start: a hook that must register its chords
+        # with the desktop binds exactly these (ADR 0008); the others ignore
+        # them and keep hearing the whole keyboard.
+        self._chords = (combo, cleanup_combo or "")
         self._cmd_keys = platform.capabilities.keycode_table.group_for("<cmd>") or frozenset()
         self._capture: Callable[[int, bool], None] | None = None
         self._sm = ChordStateMachine(combo, mode, min_hold_s)
@@ -97,7 +101,7 @@ class PushToTalk:
         self._running = True
         self._worker = threading.Thread(target=self._run_worker, daemon=True)
         self._worker.start()
-        self._tap.start(self._on_key_event)
+        self._tap.start(self._on_key_event, chords=self._chords)
 
     def stop(self) -> None:
         if not self._running:

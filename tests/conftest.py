@@ -411,14 +411,26 @@ class FakeFocusedApp:
 class FakeHotkeyTap:
     """Feed events with .press()/.release() as if the OS hook fired."""
 
-    def __init__(self):
+    def __init__(self, *, available=True, bound=None):
         self.on_event = None
         self.starts = 0
         self.stops = 0
+        self.chords = ()
+        # The Linux facts (ADR 0008): whether the mechanism exists at all,
+        # and what the desktop bound where it owns the binding.
+        self._available = available
+        self.bound = bound or {}
 
-    def start(self, on_event):
+    def start(self, on_event, chords=()):
         self.on_event = on_event
+        self.chords = tuple(chords)
         self.starts += 1
+
+    def available(self):
+        return self._available
+
+    def bindings(self):
+        return dict(self.bound)
 
     def stop(self):
         self.on_event = None
@@ -433,12 +445,13 @@ class FakeHotkeyTap:
 
 class FakeHardwareProbe:
     def __init__(self, *, vram=None, dx12=False, cpu="Test CPU", driver=False,
-                 metal=False):
+                 metal=False, driver_cuda=None):
         self.vram = vram
         self.dx12 = dx12
         self.cpu = cpu
         self.driver = driver
         self.metal = metal
+        self.driver_cuda = driver_cuda
         self.cuda_probes = 0
 
     def cuda_total_memory(self):
@@ -457,13 +470,34 @@ class FakeHardwareProbe:
     def metal_gpu_present(self):
         return self.metal
 
+    def driver_cuda_version(self):
+        return self.driver_cuda
+
+
+class FakeSingleInstance:
+    def __init__(self):
+        self.wake_callback = None
+        self.wakes = 0
+
+    def acquire(self):
+        return True
+
+    def wake_other(self):
+        self.wakes += 1
+
+    def on_wake(self, callback):
+        self.wake_callback = callback
+
 
 class FakeDesktop:
     """Counts the shell actions a surface asked for; answers like NullDesktop."""
 
     def __init__(self):
         self.opened: list = []
-        self.permission_settings_opens = 0
+        # How many times a surface asked for the grant (ADR 0012) — a deep
+        # link on darwin, a portal request on Linux, counted the same way.
+        self.permission_requests = 0
+        self.desktop_entry_installs = 0
         # The tray ink a test wants this desktop to be sitting on, and the
         # callback the app registered — so a test can drive a taskbar theme
         # change without a registry.
@@ -474,8 +508,11 @@ class FakeDesktop:
     def open_path(self, path):
         self.opened.append(path)
 
-    def open_permission_settings(self):
-        self.permission_settings_opens += 1
+    def request_permission(self):
+        self.permission_requests += 1
+
+    def install_desktop_entry(self):
+        self.desktop_entry_installs += 1
 
     def text_scale_factor(self):
         return 1.0
@@ -511,6 +548,7 @@ def make_platform(**overrides):
         focused_app=FakeFocusedApp(),
         hotkey_tap=FakeHotkeyTap(),
         hardware=FakeHardwareProbe(),
+        single_instance=FakeSingleInstance(),
         desktop=FakeDesktop(),
     )
     fakes.update(overrides)
@@ -540,6 +578,24 @@ def pin_one_rung_platform(monkeypatch):
                         dataclasses.replace(plat, capabilities=caps))
 
 
+# The darwin permission copy, as the fake carries it. Spelled here rather
+# than imported from the adapter: darwin.py imports fcntl and pyobjc, so the
+# fake has to stand on its own on every OS (ADR 0012).
+def accessibility_preflight():
+    from cadent.platform.base import PermissionPreflight
+
+    return PermissionPreflight(
+        name="accessibility",
+        banner=("Cadent needs the Accessibility permission to type what you "
+                "dictate. Turn Cadent on under Privacy & Security → Accessibility."),
+        wizard_body=("macOS only lets Cadent type into other apps once you grant "
+                     "it Accessibility. In System Settings, turn Cadent on under "
+                     "Privacy & Security → Accessibility, then come back here."),
+        action_label="Open System Settings",
+        waiting="Waiting for the permission — Cadent notices the moment it's granted.",
+        granted="Accessibility is granted — Cadent can type for you.")
+
+
 def pin_darwin_ui_platform(monkeypatch, *, granted=True, running=None,
                            names=None):
     """Pin `platform.current()` to a fake carrying darwin's UI-facing column
@@ -565,7 +621,8 @@ def pin_darwin_ui_platform(monkeypatch, *, granted=True, running=None,
         gpu_only_engines=frozenset(),
         show_runtime_combo=False,
         gpu_pack_available=False,
-        permission_preflight="accessibility",
+        gpu_pack_editions={},
+        permission=accessibility_preflight(),
         autostart_label="Start at login",
         app_identity_placeholder="com.example.app",
         app_picker=True,
@@ -579,6 +636,93 @@ def pin_darwin_ui_platform(monkeypatch, *, granted=True, running=None,
         theme_subtitle="Follows your Mac's Appearance setting",
         high_contrast_reason=("macOS is set to increase contrast, so "
                               "Cadent is following your system colours"))
+    plat = dataclasses.replace(plat, capabilities=caps)
+    monkeypatch.setattr(platform_pkg, "_current", plat)
+    return plat
+
+
+def pin_linux_ui_platform(monkeypatch, *, tier="portal", granted=True, running=None,
+                          names=None, paste=True, per_app_overrides=None,
+                          hotkey_available=True, bound=None):
+    """Pin `platform.current()` to a fake carrying one Linux tier's column
+    (spec §2.4) — the way Linux UI behaviour is tested on every OS, never by
+    the host desktop. Returns the platform so tests drive its fakes."""
+    import dataclasses
+
+    from cadent import platform as platform_pkg
+    from cadent.platform.base import GpuPackEdition, PermissionPreflight
+    from cadent.platform.keycodes import LINUX_KEYCODES
+
+    whole = tier == "whole"
+    if per_app_overrides is None:
+        per_app_overrides = tier != "reduced"
+    plat = make_platform(
+        focused_app=FakeFocusedApp(name="org.kde.konsole" if per_app_overrides else "unknown",
+                                   granted=granted, running=running, names=names),
+        hotkey_tap=FakeHotkeyTap(available=hotkey_available, bound=bound))
+    portal = PermissionPreflight(
+        name="portal",
+        banner="Cadent needs your desktop's permission to hear its hotkey and type "
+               "what you dictate. Allow the prompts to turn dictation on.",
+        wizard_body="Your desktop asks before an app can listen for a shortcut or "
+                    "type into other windows. Press the button and allow the prompts.",
+        action_label="Ask for permission",
+        waiting="Waiting for your desktop — allow the prompts and Cadent notices.",
+        granted="Permission granted — Cadent can hear its hotkey and type for you.")
+    cublas = GpuPackEdition(engine="faster-whisper", label="NVIDIA cuBLAS 12",
+                            size="~600 MB", wheels=(("nvidia-cublas-cu12", "12.9.2.10",
+                                                     "manylinux", ("libcublas.so.12",
+                                                                   "libcublasLt.so.12")),),
+                            activation="preload")
+    cuda13 = GpuPackEdition(engine="parakeet", label="NVIDIA CUDA 13 runtime",
+                            size="~1.3 GB", wheels=(("nvidia-cuda-runtime", "13.0.96",
+                                                     "manylinux", ("libcudart.so.13",)),),
+                            activation="preload", min_driver_cuda=13000)
+    summaries = {
+        "whole": "X11 session on KDE Plasma — Whole support: everything Cadent does "
+                 "works here.",
+        "portal": "Wayland session on KDE Plasma — Portal support: your desktop owns "
+                  "the hotkey, Cadent won't learn on its own which apps need pasting, "
+                  "and there's no overlay.",
+        "reduced": "Wayland session on GNOME — Reduced support: no overlay, no "
+                   "per-app overrides.",
+    }
+    caps = dataclasses.replace(
+        plat.capabilities,
+        keycode_table=LINUX_KEYCODES,
+        default_injection_strategy="type" if whole or not paste else "clipboard",
+        injection_rungs=("type", "paste") if whole else (("paste", "type") if paste
+                                                        else ("type",)),
+        paste_chord="ctrl+v",
+        default_overrides=(),
+        default_override_reasons={},
+        auto_learn_overrides=whole,
+        stt_runtimes={"faster-whisper": ("auto", "cuda", "cpu"),
+                      "parakeet": ("auto", "cuda", "cpu")},
+        gpu_only_engines=frozenset(),
+        show_runtime_combo=True,
+        gpu_pack_available=True,
+        gpu_pack_editions={"faster-whisper": cublas, "parakeet": cuda13},
+        permission=None if whole else portal,
+        autostart_label="Start at login",
+        app_identity_placeholder="org.mozilla.firefox",
+        app_picker=True,
+        mic_permission_hint=None,
+        tray_click_toggles_pause=False,
+        modifier_captions={"ctrl": "Ctrl", "shift": "Shift", "alt": "Alt",
+                           "option": "Alt", "win": "Super", "cmd": "Super",
+                           "super": "Super"},
+        tray_icon_painted_by_os=False,
+        theme_subtitle="Follows your desktop's colour scheme",
+        high_contrast_reason=("Your desktop is set to higher contrast, so Cadent is "
+                              "following your system colours"),
+        per_app_overrides=per_app_overrides,
+        overlay="windowed" if whole else None,
+        support_tier=tier,
+        support_tier_summary=summaries[tier],
+        default_combo="<ctrl>+<cmd>" if whole else "<ctrl>+<cmd>+space",
+        default_cleanup_combo="<ctrl>+<shift>+<alt>" if whole else "<ctrl>+<cmd>+c",
+        parakeet_on_cpu_recommended=True)
     plat = dataclasses.replace(plat, capabilities=caps)
     monkeypatch.setattr(platform_pkg, "_current", plat)
     return plat
@@ -626,9 +770,9 @@ def machine(monkeypatch):
     import cadent.platform as platform_pkg
 
     def set_machine(*, vram=None, dx12=False, cpu="Test CPU", driver=False,
-                    metal=False):
+                    metal=False, driver_cuda=None):
         probe = FakeHardwareProbe(vram=vram, dx12=dx12, cpu=cpu, driver=driver,
-                                  metal=metal)
+                                  metal=metal, driver_cuda=driver_cuda)
         plat = dataclasses.replace(platform_pkg.current(), hardware=probe)
         monkeypatch.setattr(platform_pkg, "_current", plat)
         return probe

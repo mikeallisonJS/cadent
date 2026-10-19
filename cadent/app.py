@@ -16,7 +16,8 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from . import a11y, downloads, gpu_pack, hardware, icons, snippets, stt, vocabulary
@@ -32,6 +33,7 @@ from .hotkey import PushToTalk
 from .inject import Injector, learn_override
 from .overlay import Overlay
 from .pipeline import DictationReport, Pipeline
+from .platform.base import APP_ID
 from .settings_ui import SettingsWindow
 from .stt import make_engine
 from .theme.manager import ThemeManager
@@ -71,6 +73,52 @@ class _Bridge(QObject):
     download_progress = Signal(str, object)    # what, Progress (#115)
     download_finished = Signal(str)            # what — however it ended
     tray_ink_changed = Signal()                # the taskbar's colour mode moved
+    woken = Signal()                           # a second launch knocked (ADR 0014)
+
+
+class TrayOverlay:
+    """What stands where the pill would be on a tier with no overlay
+    (`Capabilities.overlay` is None, ADR 0014): every activity state is a
+    no-op — the tray icon alone says a recording is under way — and a
+    failure goes to the tray's message, which Qt's D-Bus backend hands to
+    the notification daemon whether or not a tray host exists."""
+
+    def __init__(self, notify: Callable[[str], None]) -> None:
+        self._notify = notify
+        self.level_source: Callable[[], float] | None = None
+
+    def realize(self) -> None:
+        pass
+
+    def set_cleanup(self, on: bool) -> None:
+        pass
+
+    def set_show_activity(self, show: bool) -> None:
+        pass
+
+    def set_tokens(self, tokens: dict) -> None:
+        pass
+
+    def show_recording(self) -> None:
+        pass
+
+    def show_transcribing(self) -> None:
+        pass
+
+    def show_cleaning(self) -> None:
+        pass
+
+    def show_cancelled(self) -> None:
+        pass
+
+    def show_paused(self) -> None:
+        pass
+
+    def show_failure(self, detail: str = "") -> None:
+        self._notify(detail)
+
+    def hide_overlay(self) -> None:
+        pass
 
 
 class CadentApp:
@@ -118,8 +166,15 @@ class CadentApp:
 
         self.qt = QApplication(sys.argv)
         self.qt.setQuitOnLastWindowClosed(False)
+        # The desktop-file id Qt derives the Wayland app_id from — the one
+        # identity ADR 0009 picked for every other app, applied to ourselves
+        # (ADR 0011). Harmless where nothing reads it.
+        QGuiApplication.setDesktopFileName(APP_ID)
         # One mark for every window, the taskbar and Alt-Tab (#73).
         self.qt.setWindowIcon(icons.app_icon())
+        # First run on a desktop nothing installed us on: the launcher entry
+        # and icon (ADR 0011). A no-op everywhere an installer did it.
+        self.platform.desktop.install_desktop_entry()
         # The design language, before any window exists. Windows' Text size
         # setting is read once here and applied on this launch; no Qt
         # mechanism honours it and there is no watcher (M4 8.5).
@@ -129,7 +184,12 @@ class CadentApp:
         # Focus-visible: ring on Tab, nothing on click. Held on self because
         # an event filter that gets collected silently stops filtering.
         self.focus_filter = a11y.install(self.qt)
-        self.overlay = Overlay(self.config, self.theme.tokens, platform=self.platform)
+        # Constructed only where the fact says so (ADR 0014); otherwise
+        # failures route to the tray's message and nothing else shows.
+        if self.platform.capabilities.overlay == "windowed":
+            self.overlay = Overlay(self.config, self.theme.tokens, platform=self.platform)
+        else:
+            self.overlay = TrayOverlay(self._notify_failure)
         self.overlay.level_source = lambda: self.recorder.level
         # Realized at startup rather than on the first show: otherwise the
         # first pill of every session pays window-creation and first-paint
@@ -184,6 +244,17 @@ class CadentApp:
         self._setup_tray()
         self.overlay.set_cleanup(self.config.cleanup_mode)
         self.ptt = self._make_ptt()
+        # The grant poll (ADR 0012) and the tray-host watch (ADR 0014): one
+        # 2 s timer owning the two grant faults, feeding whichever permission
+        # surface is open, and noticing a tray host arriving mid-session.
+        self._housekeeping = QTimer()
+        self._housekeeping.setInterval(2000)
+        self._housekeeping.timeout.connect(self._housekeep)
+        self._housekeeping.start()
+        # A second launch knocks; on a desktop with no tray that is the way
+        # to Settings (ADR 0014).
+        self.bridge.woken.connect(lambda: self._show_settings())
+        self.platform.single_instance.on_wake(self.bridge.woken.emit)
 
         if self._needs_setup():
             # Dictation is disabled until setup finishes, and the tray carries
@@ -203,6 +274,44 @@ class CadentApp:
         # Same for the cleanup LLM when the app starts with cleanup on.
         if self.config.cleanup_mode and not self.config.paused:
             self.llm_lifecycle.set_wanted(True)
+
+    # ---- the grant poll and the tray-host watch ----------------------------
+
+    def _housekeep(self) -> None:
+        self._poll_permission()
+        self._poll_tray_host()
+
+    def _poll_permission(self) -> None:
+        """Own the two grant faults (ADR 0012), mutually exclusive: the
+        hotkey mechanism is absent, or it is there and the grant is missing.
+        Then tell the surfaces that render the grant to re-read it."""
+        caps = self.platform.capabilities
+        available = self.platform.hotkey_tap.available()
+        self.tray.set_fault("hotkey-unavailable", not available)
+        if caps.permission is None:
+            return
+        granted = self.platform.focused_app.permission_granted()
+        self.tray.set_fault("permission-needed", available and not granted)
+        window = self.settings_window
+        if window is not None and window.isVisible():
+            window.refresh_permission()
+        if self.wizard is not None and self.wizard.isVisible():
+            self.wizard.refresh_permission()
+
+    def _poll_tray_host(self) -> None:
+        window = self.settings_window
+        if window is not None and window.isVisible():
+            window.set_tray_available(QSystemTrayIcon.isSystemTrayAvailable())
+
+    def _notify_failure(self, detail: str) -> None:
+        """`show_failure` on a tier with no overlay (ADR 0014). Every failure
+        path in `_handle_report` already ends in a `tray.message`, which Qt's
+        D-Bus backend hands to the notification daemon whether or not a tray
+        host exists — so that toast *is* the desktop notification here, and
+        a second one restating the pill's two words would be the duplicate.
+        Logged so the pill's state is still traceable."""
+        log.debug("no overlay on this tier; failure state %r goes to the tray toast",
+                  detail)
 
     # ---- STT lifecycle ---------------------------------------------------
 
@@ -236,10 +345,12 @@ class CadentApp:
         # Every fresh engine, not only a downloaded one: a model picked off
         # disk after an earlier one failed must clear that fault too.
         self.bridge.stt_loaded.emit()
+        hw = hardware.detect_safely()
         if gpu_pack.should_offer(self.config.stt_device,
                                  getattr(self._stt, "device", "cpu"),
                                  stt_engine=self.config.stt_engine,
-                                 driver_present=hardware.detect_safely().nvidia_driver):
+                                 driver_present=hw.nvidia_driver,
+                                 driver_cuda_version=hw.driver_cuda_version):
             self.bridge.gpu_offer.emit()
         return LOADED
 
@@ -463,32 +574,43 @@ class CadentApp:
 
     # ---- GPU support pack (#55) ------------------------------------------
 
+    def _edition(self):
+        """The pack edition the running speech engine reads (ADR 0010)."""
+        return gpu_pack.edition_for(self.config.stt_engine)
+
     def _on_gpu_offer(self) -> None:
         """Disclose, never silently download, never a blocking prompt: the
         toast points at a tray menu item, so a missed toast still leaves the
         offer reachable. The offer also drives amber — but only until the menu
         has been opened, so it can never become permanent scenery (§3.4)."""
+        edition = self._edition()
+        size = edition.size if edition else gpu_pack.DOWNLOAD_SIZE
+        self.tray.set_gpu_edition(self.config.stt_engine)
         self.tray.offer_gpu_pack()
         self.tray.message(
             "Cadent — GPU detected",
             "Dictation is running on CPU, but this PC has an NVIDIA GPU. "
-            f"Pick 'Download GPU support pack' ({gpu_pack.DOWNLOAD_SIZE}, one-time) "
+            f"Pick 'Download GPU support pack' ({size}, one-time) "
             "from the tray menu to speed up transcription.",
             QSystemTrayIcon.MessageIcon.Information, 10_000)
 
     def _on_gpu_download_clicked(self) -> None:
+        edition = self._edition()
+        what = edition.label if edition else "NVIDIA cuBLAS"
+        size = edition.size if edition else gpu_pack.DOWNLOAD_SIZE
         self.tray.gpu_action.setEnabled(False)
         self.tray.message(
             "Cadent — one-time GPU support pack download",
-            f"Downloading NVIDIA cuBLAS ({gpu_pack.DOWNLOAD_SIZE}) from PyPI. "
+            f"Downloading {what} ({size}) from PyPI. "
             "This is the only network activity Cadent performs. "
             "Dictation keeps working on CPU until it finishes.",
             QSystemTrayIcon.MessageIcon.Information, 10_000)
-        threading.Thread(target=self._install_gpu_pack, daemon=True).start()
+        threading.Thread(target=self._install_gpu_pack, args=(edition,),
+                         daemon=True).start()
 
-    def _install_gpu_pack(self) -> None:
+    def _install_gpu_pack(self, edition=None) -> None:
         try:
-            gpu_pack.install_pack()
+            gpu_pack.install_pack(edition=edition)
         except Exception as exc:
             log.exception("GPU support pack install failed")
             self.bridge.gpu_installed.emit(str(exc))
@@ -508,8 +630,9 @@ class CadentApp:
         self.tray.message(
             "Cadent", "GPU support pack ready — restarting the speech engine on GPU.",
             QSystemTrayIcon.MessageIcon.Information, 4_000)
-        # install_pack prepended the pack dir to PATH, so the reload's CUDA
-        # probe can find cuBLAS now. Detach-then-reload, #38 pattern.
+        # install_pack activated the edition (a PATH prepend or an RTLD_LOCAL
+        # preload), so the reload's CUDA probe can find it now.
+        # Detach-then-reload, #38 pattern.
         self._stt = None
         threading.Thread(target=self._load_stt, daemon=True).start()
 
@@ -811,7 +934,8 @@ class CadentApp:
                          on_wizard=self._run_wizard,
                          on_gpu_download=self._on_gpu_download_clicked,
                          on_quit=self._quit,
-                         on_message_clicked=self._on_toast_clicked)
+                         on_message_clicked=self._on_toast_clicked,
+                         stt_engine=self.config.stt_engine)
         self.tray.set_cleanup(self.config.cleanup_mode)
         self.tray.set_paused(self.config.paused)
         # Startup on a broken config was silent: the app ran on nothing the
@@ -840,6 +964,8 @@ class CadentApp:
         # Charter: the LLM never sits resident while paused.
         self.llm_lifecycle.set_wanted(self.config.cleanup_mode and not checked)
         self.tray.set_paused(checked)
+        if self.settings_window is not None:
+            self.settings_window.set_paused(checked)
 
     def _run_wizard(self) -> None:
         """Settings ▸ General, and the tray's "Finish setup…" when setup was
@@ -987,11 +1113,15 @@ class CadentApp:
                 devices=self._input_devices(), history=self.history,
                 high_contrast=self.theme.high_contrast,
                 mic_monitor=self.mic_monitor,
-                capture_keys=self._capture_keys)
+                capture_keys=self._capture_keys,
+                tray_available=QSystemTrayIcon.isSystemTrayAvailable(),
+                paused=self.config.paused)
             self.settings_window.applied.connect(self._on_setting_applied)
             self.settings_window.theme_requested.connect(self._on_theme_preference)
             self.settings_window.wizard_requested.connect(self._run_wizard)
             self.settings_window.move_overlay_requested.connect(self._move_overlay)
+            self.settings_window.pause_requested.connect(self._toggle_pause)
+            self.settings_window.quit_requested.connect(self._quit)
             self.settings_window.model_download_requested.connect(
                 self._download_speech_model)
             self.settings_window.model_download_cancel_requested.connect(
@@ -1032,7 +1162,10 @@ class CadentApp:
             self.ptt.stop()
             self.ptt = self._make_ptt()
             self.ptt.start()
+            if self.settings_window is not None:
+                self.settings_window.hotkeys.refresh_bindings()
         elif engine == "stt":
+            self.tray.set_gpu_edition(self.config.stt_engine)
             # Detach first so dictations report not-ready instead of using the
             # old model (same pattern as the #38 crash recovery). Reported
             # rather than fired and forgotten since #115: the pane that made
@@ -1078,6 +1211,7 @@ class CadentApp:
 
     def run(self) -> int:
         self.ptt.start()
+        self._poll_permission()
         try:
             return self.qt.exec()
         finally:

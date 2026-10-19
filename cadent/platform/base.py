@@ -82,6 +82,51 @@ class KeycodeTable:
 
 
 @dataclass(frozen=True)
+class PermissionPreflight:
+    """The one OS grant Cadent cannot work without, and the words every
+    surface renders for it (ADR 0012). One fact rather than six parallel
+    fields: the copy cannot fall out of step with the name, and a platform
+    with no grant carries None instead of five empty strings.
+
+    `name` is the grant's own identity ("accessibility", "portal");
+    `banner` is the Settings strip while the grant is missing, `wizard_body`
+    the setup step's explanation, `action_label` the button that asks for it
+    (`DesktopEnv.request_permission`), and `waiting` / `granted` the two
+    status lines the step shows while it polls."""
+
+    name: str
+    banner: str
+    wizard_body: str
+    action_label: str
+    waiting: str
+    granted: str
+
+
+@dataclass(frozen=True)
+class GpuPackEdition:
+    """One downloadable GPU support pack (ADR 0010): what it serves, what it
+    costs, where it comes from and how it is switched on.
+
+    `wheels` lists (distribution, version, wheel-tag fragment, files) — every
+    file named is extracted out of that wheel into the pack dir. `activation`
+    is "path" (prepend the dir to PATH, the Windows DLL search order) or
+    "preload" (`ctypes.CDLL` each file in order, RTLD_LOCAL, before the engine
+    first touches CUDA). `min_driver_cuda` is the driver API version
+    (`cuDriverGetVersion`, 13000 = CUDA 13) the edition needs, or None."""
+
+    engine: str
+    label: str                       # "cuBLAS 12", "CUDA 13 runtime"
+    size: str                        # the disclosed download, "~550 MB"
+    wheels: tuple[tuple[str, str, str, tuple[str, ...]], ...]
+    activation: str                  # "path" | "preload"
+    min_driver_cuda: int | None = None
+
+    @property
+    def files(self) -> tuple[str, ...]:
+        return tuple(f for _dist, _ver, _tag, names in self.wheels for f in names)
+
+
+@dataclass(frozen=True)
 class Capabilities:
     """Platform *facts* (spec §1.3). If a surface needs a platform fact not
     listed here, it goes in this table, not in an `if sys.platform` branch.
@@ -104,7 +149,9 @@ class Capabilities:
     gpu_only_engines: frozenset[str]
     show_runtime_combo: bool
     gpu_pack_available: bool                 # wizard page + tray items exist at all
-    permission_preflight: str | None         # None, or "accessibility" on darwin
+    # None where nothing is needed (win32, Linux X11); the grant and its copy
+    # otherwise (darwin's Accessibility, the portal grants on Linux Wayland).
+    permission: PermissionPreflight | None
     autostart_label: str
     app_identity_placeholder: str            # "app.exe" / "com.example.app"
     app_picker: bool                         # running-apps picker vs free text only
@@ -136,6 +183,35 @@ class Capabilities:
     # Why the theme control appears inert while a contrast setting is on —
     # same reason, two OS vocabularies (contrast theme / increased contrast).
     high_contrast_reason: str
+    # ---- the facts the Linux support tiers vary (spec §2.4) ---------------
+    # Whether per-app overrides can apply here at all: True wherever the
+    # focused app has an identity. False on Linux's Reduced tier (GNOME
+    # Wayland exposes none), where the pane stays editable with a note
+    # (ADR 0009).
+    per_app_overrides: bool = True
+    # The overlay pill: "windowed" (today's overlay.py, Move mode included),
+    # None (no overlay — failures go to the tray's message), or "anchored"
+    # (reserved for a layer-shell helper; unused). ADR 0014.
+    overlay: str | None = "windowed"
+    # Linux's support tier ("whole" / "portal" / "reduced") and the finished
+    # sentence Settings ▸ General shows for it; None off Linux, where the
+    # row is absent (spec §9.4).
+    support_tier: str | None = None
+    support_tier_summary: str | None = None
+    # The shipped chords, as platform facts: the Wayland tiers cannot bind a
+    # modifiers-only chord, so theirs carry a keysym (ADR 0008). `Config`
+    # reads these for its defaults.
+    default_combo: str = "<ctrl>+<cmd>"
+    default_cleanup_combo: str = "<ctrl>+<shift>+<alt>"
+    # The GPU support pack editions this platform can download, by speech
+    # engine (ADR 0010). Empty where no pack exists (darwin: Metal ships in
+    # the build). `gpu_pack_available` says whether the surface renders at
+    # all; this says what it fetches.
+    gpu_pack_editions: Mapping[str, GpuPackEdition] = field(default_factory=dict)
+    # Whether Parakeet earns the Recommended chip on a non-NVIDIA machine
+    # with ≥ 4 physical cores and ≥ 8 GB — measured on x86 Linux (#28, ADR
+    # 0010); Windows keeps its Whisper CPU rows until it is benched there.
+    parakeet_on_cpu_recommended: bool = False
 
 
 class KeyboardOutput(Protocol):
@@ -185,9 +261,9 @@ class FocusedApp(Protocol):
         ...
 
     def permission_granted(self) -> bool:
-        """Is `Capabilities.permission_preflight`'s grant present? True where
-        there is no preflight, and on a *failed* probe — a broken check must
-        nag nobody."""
+        """Is `Capabilities.permission`'s grant present? True where there is
+        no preflight, and on a *failed* probe — a broken check must nag
+        nobody."""
         ...
 
     def running_apps(self) -> list[tuple[str, str]]:
@@ -205,12 +281,33 @@ class FocusedApp(Protocol):
 class HotkeyTap(Protocol):
     """The OS event hook. Feeds raw key events; chord.py stays pure."""
 
-    def start(self, on_event: Callable[[int, bool, bool], None]) -> None:
+    def start(self, on_event: Callable[[int, bool, bool], None],
+              chords: tuple[str, ...] = ()) -> None:
         """Begin listening; on_event(keycode, is_down, injected) is called on
-        the hook's own thread and must stay fast."""
+        the hook's own thread and must stay fast.
+
+        `chords` names the stored chords the caller will watch for (the
+        dictation chord first, the cleanup tap second). A hook that hears the
+        whole keyboard ignores them; a hook that has to *register* its chords
+        with the desktop (Linux's GlobalShortcuts portal, ADR 0008) binds
+        exactly these and synthesizes their keycodes back into `on_event`."""
         ...
 
     def stop(self) -> None: ...
+
+    def available(self) -> bool:
+        """Can this hook hear anything at all on this session? False only
+        where the mechanism is absent (no GlobalShortcuts interface on a
+        stock Sway) — the `hotkey-unavailable` fault, never the grant's
+        state, which is `FocusedApp.permission_granted()`'s."""
+        ...
+
+    def bindings(self) -> Mapping[str, str]:
+        """What the desktop actually bound, where the desktop owns the
+        binding: chord → the trigger in force, in the desktop's own
+        spelling. Empty wherever Cadent's own hook does the listening and
+        the stored chord is the whole truth."""
+        ...
 
 
 class HardwareProbe(Protocol):
@@ -225,6 +322,13 @@ class HardwareProbe(Protocol):
     def metal_gpu_present(self) -> bool:
         """A Metal GPU the llama.cpp build can offload to — true on every
         Apple Silicon Mac, false everywhere else (#146)."""
+        ...
+
+    def driver_cuda_version(self) -> int | None:
+        """The CUDA version the installed NVIDIA driver speaks, as
+        `cuDriverGetVersion` reports it (13000 = CUDA 13), or None where
+        there is no driver to ask. Gates the Parakeet pack edition on Linux
+        (ADR 0010: an R580+ driver)."""
         ...
 
 
@@ -243,15 +347,39 @@ class SingleInstance(Protocol):
         with the process — no stale state to clean up."""
         ...
 
+    def wake_other(self) -> None:
+        """After a refused `acquire()`: tell the instance that holds the
+        claim that someone tried to launch it again. On a desktop with no
+        tray there is no icon to click, so the second launch is the way to
+        reach Settings (ADR 0014). A no-op where there is nothing to say."""
+        ...
+
+    def on_wake(self, callback: Callable[[], None]) -> None:
+        """Register what the holder does when a second launch wakes it. The
+        callback arrives on whatever thread the mechanism uses; callers
+        marshal, as everywhere else on this seam."""
+        ...
+
 
 class DesktopEnv(Protocol):
     def open_path(self, path: Path) -> None:
         """Open a file in the user's associated app; never blocks, never raises."""
         ...
 
-    def open_permission_settings(self) -> None:
-        """Deep-link to where `permission_preflight`'s grant is given (System
-        Settings ▸ Accessibility on darwin); a no-op where there is none."""
+    def request_permission(self) -> None:
+        """Ask for `Capabilities.permission`'s grant, however this OS grants
+        it: darwin deep-links to the System Settings pane, Linux raises the
+        portal dialogs by making the request (ADR 0012). Fire-and-forget on
+        both — never blocks, never retries on its own, the outcome arrives
+        through `FocusedApp.permission_granted()`. A no-op where there is no
+        preflight."""
+        ...
+
+    def install_desktop_entry(self) -> None:
+        """Make the app known to the desktop where nothing installed it: on
+        Linux, write the `.desktop` entry and hicolor icons on first run
+        unless a system-wide entry exists (ADR 0011). A no-op elsewhere —
+        the installer or the bundle already did it."""
         ...
 
     def text_scale_factor(self) -> float: ...
@@ -280,6 +408,13 @@ class DesktopEnv(Protocol):
         ...
 
     def stop_watching_tray_ink(self) -> None: ...
+
+
+# The desktop-file id Cadent files itself under on Linux (ADR 0011): the
+# `.desktop` basename, `Icon=`, `StartupWMClass`, and what Qt derives the
+# Wayland app_id from. Equal to darwin's LaunchAgent label on purpose — one
+# reverse-DNS identity everywhere the OS asks for one.
+APP_ID = "com.mikeallisonjs.cadent"
 
 
 @dataclass(frozen=True)

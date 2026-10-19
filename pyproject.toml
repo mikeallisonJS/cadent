@@ -1,16 +1,17 @@
 [project]
 name = "cadent"
 version = "0.7.0"
-description = "Fully-local push-to-talk AI dictation for Windows and macOS: transcribe, clean up, insert at the cursor"
+description = "Fully-local push-to-talk AI dictation for Windows, macOS and Linux: transcribe, clean up, insert at the cursor"
 requires-python = ">=3.11"
 # SPDX expression (PEP 639), with the text shipped in the wheel and sdist.
 license = "MIT"
 license-files = ["LICENSE"]
 classifiers = [
-    # The two OSes with a real platform adapter and a CI leg. Anything else
+    # The three OSes with a real platform adapter and a CI leg. Anything else
     # resolves to `platform/fallback.py`, which is a dev stub, not support.
     "Operating System :: Microsoft :: Windows",
     "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX :: Linux",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
 dependencies = [
@@ -24,6 +25,11 @@ dependencies = [
     # Windows-only: the distribution ships win_amd64 wheels exclusively;
     # other platforms get plain `onnxruntime` via the override below.
     "onnxruntime-directml>=1.24; sys_platform == 'win32'",
+    # The CUDA build on Linux (ADR 0010): same import package, plus the CUDA
+    # execution provider Parakeet's `cuda` rung lands on once the CUDA-13
+    # pack edition is installed. With the libraries absent it constructs on
+    # the CPU provider, exactly as the CPU wheel would.
+    "onnxruntime-gpu>=1.28; sys_platform == 'linux'",
     "sounddevice>=0.5",
     "numpy>=1.26",
     "PySide6>=6.8",
@@ -45,6 +51,11 @@ dependencies = [
     "platformdirs>=4.0",
     "rapidfuzz>=3.14.5",
     "jellyfish>=1.2.1",
+    # The Linux platform's two pure-Python transports (ADR 0013, spec §2.5):
+    # jeepney speaks D-Bus to the desktop portals, python-xlib fills the X11
+    # tier. Neither adds a native library to the bundle.
+    "jeepney>=0.9; sys_platform == 'linux'",
+    "python-xlib>=0.33; sys_platform == 'linux'",
 ]
 
 [project.optional-dependencies]
@@ -75,10 +86,10 @@ include = ["cadent*"]
 # `onnxruntime-directml` is a different distribution that installs the *same*
 # `onnxruntime` package. Both installed means whichever lands last wins, which
 # is not something to leave to resolution order. The marker keeps plain
-# `onnxruntime` off Windows only, so exactly one distribution provides the
-# module there; every other platform relies on plain `onnxruntime` (>=1.28
-# ships macOS arm64 wheels) and must keep it.
-override-dependencies = ["onnxruntime>=1.28; sys_platform != 'win32'"]
+# `onnxruntime` to macOS only, so exactly one distribution provides the
+# module everywhere: `onnxruntime-directml` on Windows, `onnxruntime-gpu` on
+# Linux (ADR 0010), plain `onnxruntime` (>=1.28 ships arm64 wheels) on macOS.
+override-dependencies = ["onnxruntime>=1.28; sys_platform == 'darwin'"]
 
 # The Vulkan build, not the CPU one (#116). Same version, same wheel tag, one
 # extra backend DLL — ggml-vulkan.dll — and cleanup runs on whatever GPU the
@@ -89,18 +100,19 @@ override-dependencies = ["onnxruntime>=1.28; sys_platform != 'win32'"]
 # CPU stays reachable at runtime through `llm_runtime` — the wheel serves both.
 # Narrower than the CPU index it replaces: win_amd64 and manylinux x86_64 only,
 # no macOS or aarch64 — which is why the source below markers it to win32 and
-# macOS builds the extra from source instead.
+# Linux (ADR 0010 widened it: the manylinux wheel exists at the same version)
+# and macOS builds the extra from source instead.
 [[tool.uv.index]]
 name = "llama-cpp-python-vulkan"
 url = "https://abetlen.github.io/llama-cpp-python/whl/vulkan"
 explicit = true
 
 [tool.uv.sources]
-# Windows-only: the Vulkan index ships no macOS wheels, and PyPI has no macOS
-# wheel either (see docs/research/macos-dev-environment.md §2b), so macOS falls
-# through to the PyPI sdist and builds from source (~60 s, Metal enabled by
-# default).
-llama-cpp-python = { index = "llama-cpp-python-vulkan", marker = "sys_platform == 'win32'" }
+# Windows and Linux: the Vulkan index ships no macOS wheels, and PyPI has no
+# macOS wheel either (see docs/research/macos-dev-environment.md §2b), so macOS
+# falls through to the PyPI sdist and builds from source (~60 s, Metal enabled
+# by default). On Linux the only system need is the distro's Vulkan loader.
+llama-cpp-python = { index = "llama-cpp-python-vulkan", marker = "sys_platform == 'win32' or sys_platform == 'linux'" }
 
 # Changelog fragments (#168): every PR that touches code ships one in
 # changelog.d/, named <issue>.<type>.md. Only the three types below render

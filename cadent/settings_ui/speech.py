@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import a11y, hardware, models, platform, settings
+from .. import a11y, gpu_pack, hardware, models, platform, settings
 from ..config import MODELS_DIR
 from ..downloads import Progress
 from .context import PaneContext
@@ -136,6 +136,11 @@ class SpeechPane(QWidget):
 
         layout.addWidget(self.biasing)
         self._show_biasing_note(engine)
+        # The one thing a user can act on when the pack edition this engine
+        # needs wants a newer driver than the machine has (ADR 0010).
+        self.driver_note = label(gpu_pack.DRIVER_TOO_OLD, "RowHint")
+        layout.addWidget(self.driver_note)
+        self._show_driver_note(engine)
 
         self.cleanup = QCheckBox()
         self.cleanup.setChecked(ctx.config.cleanup_mode)
@@ -243,6 +248,7 @@ class SpeechPane(QWidget):
             self.ctx.store.set("stt_device", runtime)
             self._fill_runtimes(engine, runtime)
             self._show_biasing_note(engine)
+            self._show_driver_note(engine)
         self.ctx.set("stt_model", model)
         # A new pick is a new attempt, so the last one's verdict goes. Without
         # this, choosing a model that turns out to be cached already leaves
@@ -272,6 +278,14 @@ class SpeechPane(QWidget):
         note = settings.biasing_note(engine)
         self.biasing.setText(note)
         self.biasing.setVisible(bool(note))
+
+    def _show_driver_note(self, engine: str) -> None:
+        edition = gpu_pack.edition_for(engine)
+        hw = hardware.detect_safely()
+        stale = (edition is not None and edition.min_driver_cuda is not None
+                 and hw.nvidia_driver
+                 and not gpu_pack.driver_can_use(edition, hw.driver_cuda_version))
+        self.driver_note.setVisible(stale)
 
     # ---- the download: watched, stoppable, and never a dead end ------------
 

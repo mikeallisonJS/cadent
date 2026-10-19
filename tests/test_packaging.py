@@ -126,3 +126,46 @@ def test_the_app_is_not_sandboxed(entitlements):
     """A sandboxed app may not tap global keystrokes or paste into other
     apps, which is the entire product."""
     assert "com.apple.security.app-sandbox" not in entitlements
+
+
+# ---- the Linux rows (spec §8.5, ADR 0011) -------------------------------------
+
+BUILD = ROOT / "scripts" / "build.py"
+PKGBUILD = ROOT / "packaging" / "aur" / "PKGBUILD"
+LINUX_INIT = ROOT / "cadent" / "platform" / "linux" / "__init__.py"
+
+
+def test_linux_has_eleven_load_bearing_rows_and_one_exclusion():
+    rows = literal(BUILD, "LOAD_BEARING")["linux"]
+    assert len(rows) == 11
+    for needle in ("libportaudio", "libonnxruntime_providers_cuda", "libqwayland-generic",
+                   "libxdg-shell", "libggml-vulkan"):
+        assert any(needle in row for row in rows), needle
+    excluded = literal(BUILD, "EXCLUDED_ON_PURPOSE")["linux"]
+    assert excluded == ["*/libasound.so*"]
+    assert not any("libasound" in row for row in rows)
+
+
+def test_the_app_id_is_one_literal_everywhere():
+    """The desktop-file id is the .desktop basename, the icon name, the
+    StartupWMClass, what Qt derives the Wayland app_id from, and darwin's
+    LaunchAgent label — one identity, five readers."""
+    from cadent.platform.base import APP_ID
+
+    assert APP_ID == literal(DARWIN, "LAUNCH_AGENT_LABEL") == literal(SPEC, "BUNDLE_ID")
+    text = PKGBUILD.read_text(encoding="utf-8")
+    assert f"{APP_ID}.desktop" in text
+    assert f"Icon={APP_ID}" in text
+    assert "depends=('alsa-lib'" in text
+    assert "pipewire-alsa" in text
+
+
+def test_the_linux_workflow_pins_the_runner_and_stages_portaudio():
+    workflow = (ROOT / ".github" / "workflows" / "build-installer-linux.yml").read_text()
+    assert "runs-on: ubuntu-24.04" in workflow
+    assert "libportaudio2" in workflow
+    assert "build_linux.py" in workflow
+    tag = (ROOT / ".github" / "workflows" / "tag-release.yml").read_text()
+    assert "build-installer-linux.yml" in tag
+    tests = (ROOT / ".github" / "workflows" / "test.yml").read_text()
+    assert "ubuntu-24.04" in tests

@@ -107,3 +107,45 @@ DARWIN_KEYCODES = KeycodeTable(
     ord_fallback=False,
     sides=_CARBON_SIDES,
 )
+
+
+# X keysyms (X11/keysymdef.h), one table for every Linux support tier (ADR
+# 0008): the XRecord tap reports keysyms resolved from the keycode it saw,
+# and the GlobalShortcuts tap synthesizes exactly these for the chord it
+# bound — so a chord parsed here means the same keys on X11 and on Wayland.
+# No evdev table: raw scancodes would be a second namespace to validate for
+# a capture path v1 does not ship. Like Carbon, keysyms are not characters,
+# so no ord_fallback: an unknown part drops rather than pressing a guess.
+_XK_CHARS: dict[str, int] = {
+    **{c: ord(c) for c in "abcdefghijklmnopqrstuvwxyz0123456789"},   # XK_a … XK_9
+    "space": 0x20,          # XK_space — the Wayland default chord carries it
+}
+
+# What a synthetic chord presses: the left-hand keysyms. "win" and "option"
+# are accepted spellings for the same reason the other tables accept them.
+_XK_MODIFIERS: dict[str, int] = {
+    "ctrl": 0xFFE3, "shift": 0xFFE1, "alt": 0xFFE9, "option": 0xFFE9,
+    "cmd": 0xFFEB, "win": 0xFFEB, "super": 0xFFEB,
+}
+
+# XK_F1 … XK_F35 are contiguous from 0xFFBE.
+_XK_FUNCTION_KEYS: dict[str, int] = {f"f{n}": 0xFFBE + n - 1 for n in range(1, 36)}
+
+_XK_GROUPS: dict[str, frozenset[int]] = {
+    "<ctrl>": frozenset({0xFFE3, 0xFFE4}),
+    "<shift>": frozenset({0xFFE1, 0xFFE2}),
+    "<alt>": frozenset({0xFFE9, 0xFFEA}),
+    "<cmd>": frozenset({0xFFEB, 0xFFEC}),
+    "<super>": frozenset({0xFFEB, 0xFFEC}),     # the key's own name on Linux
+    **_sided(_XK_SIDES := {"ctrl": (0xFFE3, 0xFFE4), "shift": (0xFFE1, 0xFFE2),
+                           "alt": (0xFFE9, 0xFFEA), "cmd": (0xFFEB, 0xFFEC)}),
+}
+
+LINUX_KEYCODES = KeycodeTable(
+    groups=_XK_GROUPS,
+    modifiers=_XK_MODIFIERS,
+    chars=_XK_CHARS,
+    function_keys=_XK_FUNCTION_KEYS,
+    ord_fallback=False,
+    sides=_XK_SIDES,
+)

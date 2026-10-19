@@ -135,7 +135,9 @@ def _allowed_runtimes(engine: str) -> tuple[str, ...]:
 
 def _provider_ladder(device: str, runtimes: tuple[str, ...]) -> tuple[str, ...]:
     """The providers to try for a configured device, filtered to the runtimes
-    the platform actually offers.
+    the platform actually offers. `auto` reaches for the first GPU rung the
+    platform names — DirectML on Windows, CUDA on Linux (ADR 0010) — and
+    never asks for one it doesn't.
 
     The filter is load-bearing on darwin, not cosmetic (spec §4.1): ORT there
     accepts a DmlExecutionProvider request, warns, and silently constructs
@@ -143,7 +145,11 @@ def _provider_ladder(device: str, runtimes: tuple[str, ...]) -> tuple[str, ...]:
     platform doesn't name must never be asked for at all. There is no CoreML
     rung either: that EP crashes on Parakeet (microsoft/onnxruntime#26355).
     CPU always closes the ladder."""
-    ladder = _PROVIDER_LADDERS.get(device, _PROVIDER_LADDERS["auto"])
+    if device == "auto" or device not in _PROVIDER_LADDERS:
+        ladder = tuple(p for p in ("DmlExecutionProvider", "CUDAExecutionProvider")
+                       if _RUNTIME_NAMES[p] in runtimes)[:1] + ("CPUExecutionProvider",)
+    else:
+        ladder = _PROVIDER_LADDERS[device]
     return tuple(p for p in ladder
                  if p == "CPUExecutionProvider" or _RUNTIME_NAMES[p] in runtimes)
 

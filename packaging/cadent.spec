@@ -10,10 +10,12 @@
 # onedir output into Cadent.app. A second spec file would have meant two places
 # to add the next hidden import.
 
+import glob
 import os
 import sys
 
 IS_DARWIN = sys.platform == "darwin"
+IS_LINUX = sys.platform.startswith("linux")
 
 # The identity macOS files the app under: TCC grants (Accessibility, the
 # microphone), the LaunchAgent, Finder, `open -b`. It must stay equal to
@@ -57,6 +59,28 @@ INFO_PLIST["CFBundleVersion"] = VERSION
 ICON = os.path.join(SPECPATH, "icons",
                     "cadent.icns" if IS_DARWIN else "cadent.ico")
 
+# Linux stages libportaudio itself (spec §8.5, ADR 0011): no manylinux
+# sounddevice wheel bundles it, so the build host's copy (apt's libportaudio2
+# on the ubuntu-24.04 runner) is copied into the bundle and found at runtime
+# by the hook in hooks/rthook_portaudio.py. The Vulkan loader and alsa-lib
+# stay the host's — see EXCLUDED_LINUX_LIBS below.
+LINUX_BINARIES = []
+if IS_LINUX:
+    for pattern in ("/usr/lib/x86_64-linux-gnu/libportaudio.so.2*",
+                    "/usr/lib64/libportaudio.so.2*", "/usr/lib/libportaudio.so.2*"):
+        found = sorted(glob.glob(pattern))
+        if found:
+            LINUX_BINARIES = [(path, ".") for path in found]
+            break
+    if not LINUX_BINARIES:
+        raise SystemExit("libportaudio.so.2 not found on the build host — "
+                         "apt-get install libportaudio2 first")
+
+# Excluded on purpose (spec §8.5): alsa-lib must be the host's, or the
+# microphone silently stops routing through PipeWire. PyInstaller collects it
+# as libportaudio's dependency unless told otherwise.
+EXCLUDED_LINUX_LIBS = ("libasound.so",)
+
 # Signing, when there is an identity to sign with. Read from the environment
 # rather than written here: the value names a certificate in the runner's
 # keychain, and only the workflow knows whether one was imported. Unset — the
@@ -75,17 +99,22 @@ a = Analysis(
     # The project is installed editable (uv sync), which modulegraph can't
     # follow — resolve the cadent package from the repo root instead.
     pathex=[os.path.dirname(SPECPATH)],
-    binaries=[],
+    binaries=LINUX_BINARIES,
     # The mark (#73): rasterised PNGs loaded by QIcon.addFile at runtime, so
     # Qt's SVG image-format plugin never has to survive the freeze.
     datas=[(os.path.join(SPECPATH, "icons"), "icons")],
     hiddenimports=[],
     hookspath=[os.path.join(SPECPATH, "hooks")],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=([os.path.join(SPECPATH, "hooks", "rthook_portaudio.py")]
+                   if IS_LINUX else []),
     excludes=[],
     noarchive=False,
 )
+if IS_LINUX:
+    a.binaries = [entry for entry in a.binaries
+                  if not any(os.path.basename(entry[0]).startswith(name)
+                             for name in EXCLUDED_LINUX_LIBS)]
 pyz = PYZ(a.pure)
 
 exe = EXE(

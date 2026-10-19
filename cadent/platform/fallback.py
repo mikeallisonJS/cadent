@@ -17,7 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .. import config
-from .base import Capabilities, Platform
+from .base import Capabilities, GpuPackEdition, Platform
 from .keycodes import WIN32_KEYCODES
 
 log = logging.getLogger(__name__)
@@ -84,11 +84,17 @@ class NullHotkeyTap:
     never fired either, so a silent tap is the same behaviour without the
     thread (#129: the listener lies — `running == True` while deaf)."""
 
-    def start(self, on_event) -> None:
+    def start(self, on_event, chords=()) -> None:
         pass
 
     def stop(self) -> None:
         pass
+
+    def available(self) -> bool:
+        return True     # nothing is missing; there is simply nothing here
+
+    def bindings(self):
+        return {}
 
 
 class NullHardware:
@@ -106,6 +112,9 @@ class NullHardware:
 
     def metal_gpu_present(self) -> bool:
         return False
+
+    def driver_cuda_version(self) -> int | None:
+        return None
 
 
 class NullAutostart:
@@ -125,6 +134,12 @@ class NullSingleInstance:
     def acquire(self) -> bool:
         return True
 
+    def wake_other(self) -> None:
+        pass
+
+    def on_wake(self, callback: Callable[[], None]) -> None:
+        pass
+
 
 class NullDesktop:
     def open_path(self, path: Path) -> None:
@@ -133,8 +148,11 @@ class NullDesktop:
         except Exception:
             pass
 
-    def open_permission_settings(self) -> None:
-        pass    # no permission_preflight, nowhere to link
+    def request_permission(self) -> None:
+        pass    # no permission preflight, nothing to ask for
+
+    def install_desktop_entry(self) -> None:
+        pass    # nothing to register the app with
 
     def text_scale_factor(self) -> float:
         return 1.0
@@ -159,6 +177,18 @@ class NullDesktop:
         pass
 
 
+# The Windows GPU support pack (M3 #55): the two cuBLAS DLLs ctranslate2
+# delay-loads, out of the pinned nvidia-cublas-cu12 wheel (~412 MB down,
+# ~550 MB extracted), switched on by a PATH prepend. cuDNN is not needed at
+# ctranslate2 >= 4.6.3 (#40). Declared here rather than in win32.py because
+# the fallback mirrors win32's facts and the pack module's tests describe
+# this edition on every OS.
+CUBLAS_WIN32 = GpuPackEdition(
+    engine="faster-whisper", label="NVIDIA cuBLAS", size="~550 MB",
+    wheels=(("nvidia-cublas-cu12", "12.9.2.10", "win_amd64",
+             ("cublas64_12.dll", "cublasLt64_12.dll")),),
+    activation="path")
+
 # Mirrors win32's values on purpose: these are the portable facts the app ran
 # on everywhere before the seam existed. The darwin column of spec §1.3 arrives
 # with #144-#146, not with this placeholder.
@@ -174,7 +204,8 @@ CAPABILITIES = Capabilities(
     gpu_only_engines=frozenset({"parakeet"}),
     show_runtime_combo=True,
     gpu_pack_available=True,
-    permission_preflight=None,
+    gpu_pack_editions={"faster-whisper": CUBLAS_WIN32},
+    permission=None,
     autostart_label="Start with Windows",
     app_identity_placeholder="app.exe",
     app_picker=False,

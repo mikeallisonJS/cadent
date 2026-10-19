@@ -2,8 +2,8 @@
 
 Everything else asks this factory (or is handed the result through
 `CadentApp(platform=...)`, the single DI point). Per-OS modules are
-imported here and nowhere else, so `winreg`/`ctypes.windll` (and later
-pyobjc) load only where they exist (spec §1.4).
+imported here and nowhere else, so `winreg`/`ctypes.windll`, pyobjc, and
+Linux's jeepney/Xlib load only where they exist (spec §1.4).
 """
 
 from __future__ import annotations
@@ -41,6 +41,8 @@ def current() -> Platform:
             from . import win32 as impl
         elif sys.platform == "darwin":
             from . import darwin as impl
+        elif sys.platform.startswith("linux"):
+            from . import linux as impl
         else:
             from . import fallback as impl
         _current = impl.create()

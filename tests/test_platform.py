@@ -29,6 +29,9 @@ def test_current_matches_this_os():
         assert type(plat.clipboard).__module__.endswith("platform.darwin")
         assert type(plat.focused_app).__module__.endswith("platform.darwin")
         assert type(plat.hotkey_tap).__module__.endswith("platform.darwin")
+    elif sys.platform.startswith("linux"):
+        assert type(plat.hardware).__module__.endswith("platform.linux.shell")
+        assert plat.capabilities.support_tier in ("whole", "portal", "reduced")
     else:
         assert type(plat.keyboard).__module__.endswith("platform.fallback")
 
@@ -51,6 +54,13 @@ def test_capabilities_carry_the_injection_column():
         assert caps.default_overrides == ()
         assert caps.default_override_reasons == {}
         assert caps.app_identity_placeholder == "com.example.app"
+        assert caps.autostart_label == "Start at login"
+    elif sys.platform.startswith("linux"):
+        # Tier-shaped (ADR 0007): X11 types like Windows, the Wayland tiers
+        # paste like macOS — but with an empty override table everywhere.
+        assert caps.paste_chord == "ctrl+v"
+        assert caps.default_overrides == ()
+        assert caps.app_identity_placeholder == "org.mozilla.firefox"
         assert caps.autostart_label == "Start at login"
     else:
         assert caps.default_injection_strategy == "type"
@@ -167,14 +177,17 @@ def test_darwin_chord_machine_runs_on_carbon_events(monkeypatch):
 
 
 def test_darwin_capabilities_carry_the_accessibility_preflight():
-    """ADR 0002: one permission — the darwin column names Accessibility as
-    its preflight; every other platform has none."""
+    """ADR 0002, ADR 0012: one permission — the darwin column names
+    Accessibility as its preflight and carries its own copy; win32 has none,
+    and Linux's X11 tier has none either."""
     from cadent.platform import fallback
 
-    assert fallback.CAPABILITIES.permission_preflight is None
+    assert fallback.CAPABILITIES.permission is None
     if sys.platform == "darwin":
         caps = platform.current().capabilities
-        assert caps.permission_preflight == "accessibility"
+        assert caps.permission.name == "accessibility"
+        assert "Accessibility" in caps.permission.banner
+        assert caps.permission.action_label == "Open System Settings"
 
 
 def test_darwin_capabilities_carry_the_runtime_column():
@@ -279,8 +292,10 @@ def test_old_configs_keep_loading_with_the_alias():
 def test_new_configs_default_to_the_platforms_strategy():
     """ADR 0001: Windows types by default, macOS pastes by default — a fresh
     config carries the platform's own column, not a hardcoded "type"."""
-    expected = "clipboard" if sys.platform == "darwin" else "type"
+    expected = platform.current().capabilities.default_injection_strategy
     assert config.Config().injection_method == expected
+    assert expected == ("clipboard" if sys.platform == "darwin"
+                        else "type" if sys.platform == "win32" else expected)
     assert "type" in config.INJECTION_STRATEGIES
     assert "sendinput" not in config.INJECTION_STRATEGIES
 

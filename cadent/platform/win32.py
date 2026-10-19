@@ -21,6 +21,7 @@ from pathlib import Path
 
 from .. import config
 from .base import Capabilities, Platform
+from .fallback import CUBLAS_WIN32
 from .keycodes import WIN32_KEYCODES
 
 log = logging.getLogger(__name__)
@@ -267,7 +268,9 @@ class Win32HotkeyTap:
     def __init__(self) -> None:
         self._listener = None
 
-    def start(self, on_event) -> None:
+    def start(self, on_event, chords=()) -> None:
+        # `chords` is ignored: the hook hears the whole keyboard, so the
+        # chord machine does the matching (ADR 0008).
         if self._listener is not None:
             return
         from pynput import keyboard
@@ -284,6 +287,12 @@ class Win32HotkeyTap:
         if self._listener is not None:
             self._listener.stop()
             self._listener = None
+
+    def available(self) -> bool:
+        return True
+
+    def bindings(self):
+        return {}
 
 
 # ---- hardware probes (formerly hardware.py + gpu_pack.py) --------------------
@@ -349,6 +358,20 @@ class Win32Hardware:
     def metal_gpu_present(self) -> bool:
         return False
 
+    def driver_cuda_version(self) -> int | None:
+        """`cuDriverGetVersion` off nvcuda.dll — the Windows twin of the
+        Linux probe, present so the fact is honest everywhere; nothing on
+        Windows gates on it yet (ADR 0010 scopes the Parakeet edition to
+        Linux)."""
+        try:
+            cuda = ctypes.WinDLL("nvcuda.dll")
+            version = ctypes.c_int()
+            if cuda.cuDriverGetVersion(ctypes.byref(version)) != 0:
+                return None
+            return int(version.value)
+        except Exception:
+            return None
+
 
 # ---- autostart (formerly cadent/autostart.py) -----------------------------
 
@@ -408,6 +431,12 @@ class Win32SingleInstance:
         ctypes.windll.kernel32.CreateMutexW(None, False, _MUTEX_NAME)
         return ctypes.windll.kernel32.GetLastError() != ERROR_ALREADY_EXISTS
 
+    def wake_other(self) -> None:
+        pass    # the tray is always there to click on Windows
+
+    def on_wake(self, callback: Callable[[], None]) -> None:
+        pass
+
 
 # ---- desktop environment ------------------------------------------------------
 
@@ -463,8 +492,11 @@ class Win32Desktop:
         except Exception:
             pass
 
-    def open_permission_settings(self) -> None:
-        pass    # no permission_preflight, nowhere to link
+    def request_permission(self) -> None:
+        pass    # no permission preflight, nothing to ask for
+
+    def install_desktop_entry(self) -> None:
+        pass    # the installer registered the app
 
     def text_scale_factor(self) -> float:
         """Windows' accessibility **Text size** setting (100-225%) as a
@@ -639,7 +671,8 @@ CAPABILITIES = Capabilities(
     gpu_only_engines=frozenset({"parakeet"}),
     show_runtime_combo=True,
     gpu_pack_available=True,
-    permission_preflight=None,
+    gpu_pack_editions={"faster-whisper": CUBLAS_WIN32},
+    permission=None,
     autostart_label="Start with Windows",
     app_identity_placeholder="app.exe",
     app_picker=False,

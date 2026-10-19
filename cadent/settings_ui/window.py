@@ -14,15 +14,18 @@ visible and enabled, so it reads as a heading and cannot be landed on.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics
 from PySide6.QtWidgets import (
     QDialog,
+    QFrame,
     QHBoxLayout,
     QListWidget,
     QListWidgetItem,
+    QPushButton,
     QScrollArea,
     QStackedWidget,
+    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
@@ -70,9 +73,9 @@ UNREADABLE_CONFIG = ("config.json couldn't be read, so Cadent started with "
                      "default settings. Changes you make now won't survive a "
                      "restart.")
 
-NEEDS_PERMISSION = ("Cadent needs the Accessibility permission to type "
-                    "what you dictate. Turn Cadent on under Privacy & "
-                    "Security → Accessibility.")
+# The permission banner's words are the platform's (`Capabilities.permission`,
+# ADR 0012): the Accessibility pane exists on one OS and the portal prompts on
+# another, so no copy for either lives here.
 
 
 class NavRail(QListWidget):
@@ -120,6 +123,10 @@ class SettingsWindow(QDialog):
     theme_requested = Signal(str)
     move_overlay_requested = Signal()
     wizard_requested = Signal()
+    # The tray-less footer (ADR 0014): where no system tray hosts the icon,
+    # Pause and Quit live here, and these carry the clicks to the app.
+    pause_requested = Signal(bool)
+    quit_requested = Signal()
     # The Speech pane's download controls. Re-emitted rather than reached for
     # through `window.speech`, so app.py keeps talking to the window it holds
     # and the pane stays a detail of it.
@@ -129,13 +136,18 @@ class SettingsWindow(QDialog):
     def __init__(self, store: ConfigStore, *, tokens: dict,
                  devices: list[str] | None = None, history=None,
                  high_contrast: bool = False, mic_monitor=None,
-                 capture_keys=None, parent=None) -> None:
+                 capture_keys=None, tray_available: bool | None = None,
+                 paused: bool = False, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("Root")
         self.setWindowTitle("Cadent — Settings")
         self.resize(940, 680)
         self.store = store
         self._t = tokens
+        # Runtime state, not a fact: a host can arrive mid-session, and the
+        # app re-reads it when the window is shown (ADR 0014).
+        self._tray_available = (QSystemTrayIcon.isSystemTrayAvailable()
+                                if tray_available is None else tray_available)
 
         self.ctx = PaneContext(
             store=store, tokens=tokens, devices=devices or [], history=history,
@@ -146,7 +158,8 @@ class SettingsWindow(QDialog):
             request_wizard=self.wizard_requested.emit,
             **({"capture_keys": capture_keys} if capture_keys is not None else {}))
 
-        self.general = GeneralPane(self.ctx, high_contrast=high_contrast)
+        self.general = GeneralPane(self.ctx, high_contrast=high_contrast,
+                                   tray_available=self._tray_available)
         self.hotkeys = HotkeysPane(self.ctx)
         self.speech = SpeechPane(self.ctx)
         self.vocabulary = VocabularyPane(self.ctx)
@@ -212,20 +225,39 @@ class SettingsWindow(QDialog):
         # vocabulary pane rather than inventing a second pattern (§7.2).
         self.banner.setVisible(not store.readable)
         body.addWidget(self.banner)
-        # The needs-Accessibility banner (M5 §7): persistent while the grant
-        # is missing, cleared the moment it lands — the poll below notices,
-        # because the grant is given in System Settings where no signal of
-        # ours can fire.
+        # The permission banner (M5 §7, ADR 0012): persistent while the grant
+        # is missing, cleared the moment it lands. The 2 s poll that notices
+        # lives in the app, which owns the `permission-needed` fault and tells
+        # this window to re-read; a window built on its own reads once.
+        plat = platform.current()
+        permission = plat.capabilities.permission
         self.permission_banner = Notice(
-            tokens, NEEDS_PERMISSION,
-            [("Open System Settings",
-              platform.current().desktop.open_permission_settings)])
-        self._permission_timer = QTimer(self)
-        self._permission_timer.setInterval(2000)
-        self._permission_timer.timeout.connect(self._refresh_permission)
+            tokens, permission.banner if permission else "",
+            [(permission.action_label, plat.desktop.request_permission)]
+            if permission else [])
         body.addWidget(self.permission_banner)
         self._refresh_permission()
         body.addWidget(self.stack, 1)
+
+        # Pause and Quit, only while no tray hosts the icon (ADR 0014): the
+        # window is the one door the app has then.
+        self.footer = QFrame()
+        self.footer.setObjectName("Footer")
+        footer = QHBoxLayout(self.footer)
+        footer.setContentsMargins(int(tokens["sp_4"]), int(tokens["sp_2"]),
+                                  int(tokens["sp_4"]), int(tokens["sp_2"]))
+        footer.addStretch()
+        self.pause_button = QPushButton()
+        self.pause_button.setCheckable(True)
+        self.pause_button.setChecked(paused)
+        self.pause_button.toggled.connect(self._on_pause_toggled)
+        self._paint_pause_button(paused)
+        footer.addWidget(self.pause_button)
+        self.quit_button = QPushButton("Quit Cadent")
+        self.quit_button.clicked.connect(self.quit_requested.emit)
+        footer.addWidget(self.quit_button)
+        self.footer.setVisible(not self._tray_available)
+        body.addWidget(self.footer)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -327,14 +359,38 @@ class SettingsWindow(QDialog):
         return getattr(self, DEFAULT_NOTICE_PANE).notice
 
     def _refresh_permission(self) -> None:
-        """Show the banner while `permission_preflight`'s grant is missing;
-        stop asking once it lands (or where there is no preflight at all)."""
+        """Show the banner while `Capabilities.permission`'s grant is missing
+        (or where there is no preflight at all, never)."""
         plat = platform.current()
-        missing = bool(plat.capabilities.permission_preflight) and \
+        missing = plat.capabilities.permission is not None and \
             not plat.focused_app.permission_granted()
         self.permission_banner.setVisible(missing)
-        if not missing:
-            self._permission_timer.stop()
+
+    def refresh_permission(self) -> None:
+        """The app's grant poll lands here (ADR 0012)."""
+        self._refresh_permission()
+
+    # ---- the tray-less door (ADR 0014) --------------------------------------------
+
+    def set_tray_available(self, available: bool) -> None:
+        self._tray_available = available
+        self.footer.setVisible(not available)
+        self.general.set_tray_available(available)
+
+    def set_paused(self, paused: bool) -> None:
+        if self.pause_button.isChecked() != paused:
+            self.pause_button.blockSignals(True)
+            self.pause_button.setChecked(paused)
+            self.pause_button.blockSignals(False)
+        self._paint_pause_button(paused)
+
+    def _on_pause_toggled(self, paused: bool) -> None:
+        self._paint_pause_button(paused)
+        self.pause_requested.emit(paused)
+
+    def _paint_pause_button(self, paused: bool) -> None:
+        self.pause_button.setText("Resume dictation" if paused else "Pause dictation")
+        self.pause_button.setAccessibleName("Pause dictation")
 
     def _open_config(self) -> None:
         open_in_explorer(self.store.path)
@@ -351,11 +407,8 @@ class SettingsWindow(QDialog):
         super().showEvent(event)
         self._sync_microphone()
         self._refresh_permission()
-        if self.permission_banner.isVisibleTo(self):
-            self._permission_timer.start()
 
     def hideEvent(self, event) -> None:  # noqa: N802
-        self._permission_timer.stop()
         # Hidden is this window's common resting state, not an edge case: the
         # app keeps the instance around and re-shows it from the tray.
         self.general.stop_monitoring()

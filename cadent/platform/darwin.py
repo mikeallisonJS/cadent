@@ -29,7 +29,7 @@ from pathlib import Path
 
 from .. import config
 from ..inject import utf16_chunks
-from .base import Platform
+from .base import PermissionPreflight, Platform
 from .fallback import CAPABILITIES
 from .keycodes import DARWIN_KEYCODES
 
@@ -46,6 +46,25 @@ STT_RUNTIMES: dict[str, tuple[str, ...]] = {
     "faster-whisper": ("auto", "cpu"),
     "parakeet": ("auto", "cpu"),
 }
+
+
+# ---- the one grant: Accessibility (ADR 0002, ADR 0012) ------------------------
+
+# The words every permission surface renders, owned here rather than by the
+# Settings window and the wizard: they name a System Settings pane that
+# exists on exactly one OS (ADR 0012).
+ACCESSIBILITY = PermissionPreflight(
+    name="accessibility",
+    banner=("Cadent needs the Accessibility permission to type what you "
+            "dictate. Turn Cadent on under Privacy & Security → Accessibility."),
+    wizard_body=("macOS only lets Cadent type into other apps once you grant "
+                 "it Accessibility. In System Settings, turn Cadent on under "
+                 "Privacy & Security → Accessibility, then come back here."),
+    action_label="Open System Settings",
+    waiting=("Waiting for the permission — Cadent notices the moment it's "
+             "granted."),
+    granted="Accessibility is granted — Cadent can type for you.",
+)
 
 
 # ---- autostart: the LaunchAgent plist (spec §6.1) -----------------------------
@@ -127,6 +146,12 @@ class DarwinSingleInstance:
         self._fd = fd
         return True
 
+    def wake_other(self) -> None:
+        pass    # the menu bar item is always there to click
+
+    def on_wake(self, callback: Callable[[], None]) -> None:
+        pass
+
 
 # ---- desktop environment (spec §6.3) ------------------------------------------
 
@@ -146,11 +171,16 @@ class DarwinDesktop:
         except Exception:
             pass
 
-    def open_permission_settings(self) -> None:
+    def request_permission(self) -> None:
+        """Deep-link to the Accessibility pane: the grant is given there, so
+        asking means opening it (ADR 0012)."""
         try:
             subprocess.Popen(["open", ACCESSIBILITY_SETTINGS_URL])
         except Exception:
             log.debug("could not open System Settings", exc_info=True)
+
+    def install_desktop_entry(self) -> None:
+        pass    # the bundle is the registration
 
     def text_scale_factor(self) -> float:
         """An honest no-op: macOS exposes no readable global text scale, and
@@ -505,6 +535,9 @@ class DarwinHardware:
     def metal_gpu_present(self) -> bool:
         return True
 
+    def driver_cuda_version(self) -> int | None:
+        return None
+
 
 # ---- hotkey tap: pynput listen-only (spec §3) ---------------------------------
 
@@ -545,7 +578,8 @@ class DarwinHotkeyTap:
     def __init__(self) -> None:
         self._listener = None
 
-    def start(self, on_event) -> None:
+    def start(self, on_event, chords=()) -> None:
+        # `chords` is ignored: the tap hears the whole keyboard (ADR 0008).
         if self._listener is not None:
             return
         from pynput import keyboard
@@ -565,6 +599,12 @@ class DarwinHotkeyTap:
         if self._listener is not None:
             self._listener.stop()
             self._listener = None
+
+    def available(self) -> bool:
+        return True
+
+    def bindings(self):
+        return {}
 
 
 # ---- the assembled platform ---------------------------------------------------
@@ -593,7 +633,8 @@ def create() -> Platform:
             gpu_only_engines=frozenset(),
             show_runtime_combo=False,
             gpu_pack_available=False,
-            permission_preflight="accessibility",
+            gpu_pack_editions={},
+            permission=ACCESSIBILITY,
             app_identity_placeholder="com.example.app",
             autostart_label="Start at login",
             app_picker=True,
