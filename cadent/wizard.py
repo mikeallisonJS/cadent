@@ -54,7 +54,7 @@ WELCOME, BASICS, PERMISSION, GPU, MODEL, HOTKEY, DONE = range(7)
 PAGE_TITLES = (
     "Welcome to Cadent",
     "Microphone & basics",
-    "Accessibility permission",
+    "Permission",
     "GPU support pack",
     "Speech model",
     "Your dictation hotkey",
@@ -85,11 +85,9 @@ NO_MODEL_YET = ("Dictation stays off until a speech model is downloaded. "
                 "Open Settings ▸ Speech & cleanup when you're online, or pick "
                 "\"Finish setup…\" from the tray menu to come back here.")
 
-# What the permission page's status line reads (M5 §7). The page re-checks on
-# its own, so granting in System Settings and coming back needs no button.
-PERMISSION_WAITING = ("Waiting for the permission — Cadent notices the "
-                      "moment it's granted.")
-PERMISSION_GRANTED = "Accessibility is granted — Cadent can type for you."
+# The permission page's words are the platform's (`Capabilities.permission`,
+# ADR 0012): what it is called, how it is asked for and what the status
+# line reads while the app's poll waits for it.
 
 
 
@@ -102,10 +100,10 @@ class WizardState:
     """
 
     gpu_eligible: bool = False
-    # Capabilities.permission_preflight names a permission and the grant is
-    # missing (M5 §7) — the one darwin-only page. Fixed at construction: a
-    # page that vanished mid-wizard the moment the grant landed would shuffle
-    # the step count under the user.
+    # Capabilities.permission names a grant and it is missing (M5 §7, ADR
+    # 0012) — darwin's Accessibility, the portal grants on Linux's Wayland
+    # tiers. Fixed at construction: a page that vanished mid-wizard the
+    # moment the grant landed would shuffle the step count under the user.
     permission_needed: bool = False
     model_downloaded: bool = False
     downloading: bool = False
@@ -171,16 +169,14 @@ class SetupWizard(QDialog):
         self._t = tokens or default_tokens("dark")
         self.state = WizardState()
         self.state.model_downloaded = hardware.any_speech_model_downloaded(MODELS_DIR)
-        # The darwin-only Accessibility step (M5 §7): joins when the platform
-        # names a preflight and the grant is missing right now.
+        # The permission step (M5 §7, ADR 0012): joins when the platform
+        # names a grant and it is missing right now. The app's grant poll
+        # re-reads it while the page shows, so granting and coming back
+        # needs no button.
         caps = platform.current().capabilities
-        self.state.permission_needed = bool(caps.permission_preflight) and \
+        self._permission = caps.permission
+        self.state.permission_needed = caps.permission is not None and \
             not platform.current().focused_app.permission_granted()
-        # Re-checks the grant while the permission page is showing, so
-        # granting in System Settings and coming back needs no button.
-        self._permission_timer = QTimer(self)
-        self._permission_timer.setInterval(1000)
-        self._permission_timer.timeout.connect(self._poll_permission)
         # The last reading from the app's downloader. On the state rather than
         # on the bar, because the page is rebuilt on every visit.
         self._progress = Progress(0, 0)
@@ -283,11 +279,14 @@ class SetupWizard(QDialog):
                     answer.append(False)
                     return
                 detected = hardware.detect_cached()
+                engine = settings.engine_for_model(
+                    hardware.suggest_for_this_machine().model)
+                editions = platform.current().capabilities.gpu_pack_editions
                 eligible = hardware.should_offer_gpu_page(
                     detected.nvidia_driver, detected.vram_gb,
-                    gpu_pack.pack_installed(),
-                    settings.engine_for_model(
-                        hardware.suggest_for_this_machine().model))
+                    gpu_pack.pack_installed(edition=editions.get(engine)),
+                    engine, editions=editions,
+                    driver_cuda_version=detected.driver_cuda_version)
             except Exception:
                 log.debug("hardware probe failed", exc_info=True)
                 eligible = False
@@ -407,7 +406,6 @@ class SetupWizard(QDialog):
                 widget.deleteLater()
 
         self._stop_monitoring()
-        self._permission_timer.stop()
 
         builder = {
             WELCOME: self._build_welcome, BASICS: self._build_basics,
@@ -507,42 +505,51 @@ class SetupWizard(QDialog):
             self._mic.start(device)
 
     def _build_permission(self) -> QWidget | None:
-        """The darwin-only Accessibility step (M5 §7): a deep link and a live
-        re-check. Never a gate — see SKIPPABLE's comment."""
-        self._add(label(
-            "macOS only lets Cadent type into other apps once you grant it "
-            "Accessibility. In System Settings, turn Cadent on under "
-            "Privacy & Security → Accessibility, then come back here.",
-            "RowDesc"))
-        self.open_settings = QPushButton("Open System Settings")
+        """The permission step (M5 §7, ADR 0012): one button that asks the
+        way this OS grants — a deep link on darwin, the portal prompts on
+        Linux — and a status line the app's poll keeps current. Never a
+        gate — see SKIPPABLE's comment. A denial leaves the button enabled
+        and retries nothing on its own."""
+        permission = self._permission
+        self._add(label(permission.wizard_body, "RowDesc"))
+        self.open_settings = QPushButton(permission.action_label)
         self.open_settings.clicked.connect(
-            platform.current().desktop.open_permission_settings)
+            platform.current().desktop.request_permission)
         self._add(self.open_settings)
         self.permission_status = label("", "RowHint")
         self._add(self.permission_status)
         self.body_layout.addStretch()
         self._poll_permission()
-        self._permission_timer.start()
         return self.open_settings
 
     def _poll_permission(self) -> None:
+        """Re-read the grant; the app calls this on its 2 s poll while the
+        wizard is open (ADR 0012)."""
+        if self.page != PERMISSION or self._permission is None:
+            return
         granted = platform.current().focused_app.permission_granted()
         was = self.permission_status.text()
         self.permission_status.setText(
-            PERMISSION_GRANTED if granted else PERMISSION_WAITING)
-        if granted:
-            self._permission_timer.stop()
-            if was == PERMISSION_WAITING:
-                # Announce the arrival once — the one state change on a page
-                # whose whole point is confirmation.
-                a11y.announce(self.permission_status, PERMISSION_GRANTED)
+            self._permission.granted if granted else self._permission.waiting)
+        if granted and was == self._permission.waiting:
+            # Announce the arrival once — the one state change on a page
+            # whose whole point is confirmation.
+            a11y.announce(self.permission_status, self._permission.granted)
+
+    def refresh_permission(self) -> None:
+        self._poll_permission()
 
     def _build_gpu(self) -> QWidget | None:
         """Offered **before** model choice, because accepting it changes the
-        recommendation."""
+        recommendation. The edition and its size follow the engine the
+        machine is about to be recommended (ADR 0010)."""
+        engine = settings.engine_for_model(hardware.suggest_for_this_machine().model)
+        edition = gpu_pack.edition_for(engine) or gpu_pack.edition_for("faster-whisper")
+        what, size = ((edition.label, edition.size) if edition
+                      else ("CUDA", gpu_pack.DOWNLOAD_SIZE))
         self._add(label(
-            f"This PC has an NVIDIA GPU. Cadent can download NVIDIA's "
-            f"cuBLAS libraries ({gpu_pack.DOWNLOAD_SIZE}, one-time, from PyPI) "
+            f"This PC has an NVIDIA GPU. Cadent can download the {what} "
+            f"libraries ({size}, one-time, from PyPI) "
             "to transcribe on the GPU instead of the CPU. This is the only "
             "network activity Cadent performs besides the speech model.",
             "RowDesc"))
@@ -619,7 +626,7 @@ class SetupWizard(QDialog):
 
     def _build_hotkey(self) -> QWidget | None:
         self._add(label(
-            f"Hold {describe_combo(self.store.config.hotkey)}, say something, "
+            f"Hold {self._hotkey_words()}, say something, "
             "then let go. Cadent types it wherever your cursor is.",
             "RowDesc"))
         # The pill is always-on-top and this window is not, so the try-it page
@@ -648,12 +655,29 @@ class SetupWizard(QDialog):
         device = self.store.config.input_device or "System default"
         self._add(label(
             f"Microphone: {device}\nSpeech model: {model}\n"
-            f"Hotkey: hold {describe_combo(self.store.config.hotkey)} "
+            f"Hotkey: hold {self._hotkey_words()} "
             "and speak.", "RowDesc"))
         if not self.state.model_downloaded:
             self._add(label(NO_MODEL_YET, "RowHint"))
+        # The tier line, only where the tier takes something away (Portal
+        # and Reduced); the General row is where the fact is always
+        # looked up (ADR 0012).
+        caps = platform.current().capabilities
+        if caps.support_tier in ("portal", "reduced") and caps.support_tier_summary:
+            self.tier_line = label(caps.support_tier_summary, "RowHint")
+            self._add(self.tier_line)
         self.body_layout.addStretch()
         return None
+
+    def _hotkey_words(self) -> str:
+        """The chord that fires: the stored one, unless the desktop owns
+        the binding and substituted another for this session (ADR 0008)."""
+        bound = dict(platform.current().hotkey_tap.bindings()).get("dictate")
+        if bound and bound.startswith("<"):
+            return describe_combo(bound)
+        if bound:
+            return bound
+        return describe_combo(self.store.config.hotkey)
 
     # ---- the model download ------------------------------------------------
 

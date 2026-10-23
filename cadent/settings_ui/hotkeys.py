@@ -6,9 +6,26 @@ from PySide6.QtWidgets import QCheckBox, QComboBox, QSpinBox, QVBoxLayout, QWidg
 
 from .. import a11y, settings
 from .. import platform as platform_pkg
+from ..chord import describe_combo
 from .chord_recorder import ChordRecorderButton
 from .context import PaneContext
 from .widgets import Notice, card, label, page_title, row
+
+# Where the desktop owns the binding (Linux's Wayland tiers, ADR 0008), the
+# recorded chord is a suggestion and what fires is what the desktop reports.
+DESKTOP_OWNS = "Your desktop owns this shortcut — change it in your desktop's settings."
+
+
+def _unbindable_note(stored: str, captions) -> str:
+    """Why the button and the binding disagree, when they do: a chord with no
+    plain key (the X11 and Windows defaults) has no trigger in the portal's
+    grammar, so the desktop kept an earlier binding while the button still
+    shows what config.json holds. Empty when the stored chord could bind."""
+    if any(part.strip() and not part.strip().startswith("<")
+           for part in stored.split("+")):
+        return ""
+    return (f" — the chord stored above, {describe_combo(stored, captions)}, "
+            f"has no key and can't bind here")
 
 
 class HotkeysPane(QWidget):
@@ -57,7 +74,7 @@ class HotkeysPane(QWidget):
         layout.addWidget(self.notice)
         layout.addWidget(page_title("Hotkeys"))
         win = caps.modifier_captions.get("cmd", "Win")
-        layout.addWidget(card([
+        rows = [
             row(t, "Dictation hotkey", self.hotkey,
                 desc="Click, then press the keys you'll tap or hold to dictate",
                 hint=settings.restart_hint("hotkey")),
@@ -67,15 +84,26 @@ class HotkeysPane(QWidget):
             row(t, "Cleanup hotkey", self.cleanup_hotkey,
                 desc="Click, then tap the keys that turn cleanup on or off",
                 hint=settings.restart_hint("cleanup_hotkey")),
-            row(t, "Tell left from right", self.sided,
-                desc=f"Record the side you press — Right Ctrl rather than "
-                     f"either Ctrl, Left {win} rather than either {win}"),
-            row(t, "Minimum hold", self.min_hold,
-                desc="Shorter presses are discarded rather than dictated",
-                hint=settings.restart_hint("min_hold_ms")),
-        ]))
+        ]
+        # Left out, not disabled, where the desktop binds the shortcut: its
+        # grammar has no sides, so the promise the row makes would be false.
+        if caps.sided_hotkeys:
+            rows.append(row(t, "Tell left from right", self.sided,
+                            desc=f"Record the side you press — Right Ctrl rather than "
+                                 f"either Ctrl, Left {win} rather than either {win}"))
+        rows.append(row(t, "Minimum hold", self.min_hold,
+                        desc="Shorter presses are discarded rather than dictated",
+                        hint=settings.restart_hint("min_hold_ms")))
+        layout.addWidget(card(rows))
         layout.addWidget(self.error)
+        # What the desktop actually bound, where it owns the binding — and
+        # which chord it substituted when the stored one cannot bind there
+        # (a modifiers-only chord on Wayland, spec §4).
+        self.desktop_binding = label("", "RowHint")
+        self.desktop_binding.setVisible(False)
+        layout.addWidget(self.desktop_binding)
         layout.addStretch()
+        self.refresh_bindings()
 
         self.mode.currentIndexChanged.connect(
             lambda _i: ctx.set("hotkey_mode", self.mode.currentData()))
@@ -85,6 +113,32 @@ class HotkeysPane(QWidget):
         self.min_hold.valueChanged.connect(
             lambda value: ctx.set("min_hold_ms", value, coalesce=True))
         self.min_hold.editingFinished.connect(ctx.store.flush)
+
+    def refresh_bindings(self) -> None:
+        bindings = dict(platform_pkg.current().hotkey_tap.bindings())
+        if not bindings:
+            self.desktop_binding.setVisible(False)
+            return
+        caps = platform_pkg.current().capabilities
+        captions = caps.modifier_captions
+        parts = [DESKTOP_OWNS]
+        dictate = bindings.get("dictate")
+        if dictate:
+            if dictate.startswith("<"):
+                parts.append(f"The stored chord can't bind here, so this session uses "
+                             f"{describe_combo(dictate, captions)}.")
+            else:
+                parts.append(f"Dictation is bound to {dictate}"
+                             f"{_unbindable_note(self.ctx.config.hotkey, captions)}.")
+        cleanup = bindings.get("cleanup")
+        if cleanup:
+            if cleanup.startswith("<"):
+                parts.append(f"Cleanup uses {describe_combo(cleanup, captions)}.")
+            else:
+                parts.append(f"Cleanup is bound to {cleanup}"
+                             f"{_unbindable_note(self.ctx.config.cleanup_hotkey, captions)}.")
+        self.desktop_binding.setText(" ".join(parts))
+        self.desktop_binding.setVisible(True)
 
     # ---- recording outcomes -------------------------------------------------
 

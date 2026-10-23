@@ -36,6 +36,9 @@ class Hardware:
     dx12_gpu: bool = False          # a Direct3D 12 device — the DirectML gate (#72)
     nvidia_driver: bool = False     # nvcuda loadable — the GPU-pack gate (#55)
     metal_gpu: bool = False         # Apple Silicon — the darwin suggestion gate (#146)
+    # What CUDA the driver speaks (`cuDriverGetVersion`, 13000 = CUDA 13), or
+    # None — the Parakeet pack edition's gate on Linux (ADR 0010).
+    driver_cuda_version: int | None = None
 
 
 @dataclass(frozen=True)
@@ -69,6 +72,7 @@ def detect(probe: HardwareProbe | None = None) -> Hardware:
         dx12_gpu=probe.dx12_gpu_present(),
         nvidia_driver=probe.nvidia_driver_present(),
         metal_gpu=probe.metal_gpu_present(),
+        driver_cuda_version=probe.driver_cuda_version(),
     )
 
 
@@ -107,7 +111,9 @@ def reset_cache() -> None:
 # ---- the suggestion table --------------------------------------------------
 
 def suggest_model(vram_gb: float | None, ram_gb: float, physical_cores: int,
-                  dx12_gpu: bool = False, metal_gpu: bool = False) -> Suggestion:
+                  dx12_gpu: bool = False, metal_gpu: bool = False,
+                  cuda13_driver: bool = False,
+                  parakeet_on_cpu: bool = False) -> Suggestion:
     """Top-down, first match wins.
 
     Distil models are disproportionately good for push-to-talk: full-size
@@ -147,6 +153,13 @@ def suggest_model(vram_gb: float | None, ram_gb: float, physical_cores: int,
         return Suggestion("parakeet-tdt-0.6b-v2",
                           f"Half the mistakes on {gpu}, and it punctuates as "
                           "it types.")
+    # The Linux twin of the DirectML gate (ADR 0010): Parakeet's CUDA rung
+    # needs an NVIDIA card with room for it *and* a driver that speaks CUDA
+    # 13, which is what the pack edition it would download requires.
+    if cuda13_driver and vram_gb is not None and vram_gb >= 4:
+        return Suggestion("parakeet-tdt-0.6b-v2",
+                          f"Half the mistakes on {gpu}, and it punctuates as "
+                          "it types.")
     if vram_gb is not None and vram_gb >= 6:
         return Suggestion("distil-large-v3",
                           f"Most accurate model {gpu} can run at speed.")
@@ -161,6 +174,14 @@ def suggest_model(vram_gb: float | None, ram_gb: float, physical_cores: int,
     if ram_gb < 8:
         return Suggestion("base.en",
                           f"Light on memory — this PC has {ram_gb:.0f} GB of RAM.")
+    # Where the platform has measured it (#28: 0.66 s median on x86 Linux,
+    # 0.84 s at four emulated cores), Parakeet on the CPU beats every Whisper
+    # row at four cores and eight gigabytes. Windows keeps its rows until it
+    # is benched there (ADR 0010).
+    if parakeet_on_cpu and physical_cores >= 4:
+        return Suggestion("parakeet-tdt-0.6b-v2",
+                          "Half the mistakes, well under a second on this "
+                          "processor — and it punctuates as it types.")
     if ram_gb >= 16 and physical_cores >= 8:
         return Suggestion("distil-medium.en",
                           f"More accurate, and {physical_cores} cores can keep up.")
@@ -179,13 +200,23 @@ def suggest_for_this_machine() -> Suggestion:
         log.warning("hardware detection failed; suggesting the default model",
                     exc_info=True)
         return Suggestion(FALLBACK_MODEL, "Fast and accurate enough on any CPU.")
+    from . import platform
+
+    editions = platform.current().capabilities.gpu_pack_editions
+    parakeet = editions.get("parakeet")
+    cuda13 = (parakeet is not None and hw.nvidia_driver
+              and hw.driver_cuda_version is not None
+              and parakeet.min_driver_cuda is not None
+              and hw.driver_cuda_version >= parakeet.min_driver_cuda)
     return suggest_model(hw.vram_gb, hw.ram_gb, hw.physical_cores, hw.dx12_gpu,
-                         hw.metal_gpu)
+                         hw.metal_gpu, cuda13_driver=cuda13,
+                         parakeet_on_cpu=platform.current().capabilities
+                         .parakeet_on_cpu_recommended)
 
 
 def should_offer_gpu_page(driver_present: bool, vram_gb: float | None,
-                          pack_installed: bool, suggested_engine: str = "faster-whisper"
-                          ) -> bool:
+                          pack_installed: bool, suggested_engine: str = "faster-whisper",
+                          editions=None, driver_cuda_version: int | None = None) -> bool:
     """Whether the wizard shows the GPU support pack page.
 
     It comes **before** the model page, because accepting it changes the
@@ -198,9 +229,20 @@ def should_offer_gpu_page(driver_present: bool, vram_gb: float | None,
     ONNX Runtime's DirectML provider. Asking for 550 MB before recommending
     the model that won't read a byte of it is the placebo `gpu_pack.
     should_offer` already refuses to serve, one page earlier.
+
+    On Linux the same gate reads the platform's editions (ADR 0010): the
+    page is offered for whichever engine is about to be suggested *if* an
+    edition serves it and the driver can use that edition.
     """
-    return (driver_present and not pack_installed
-            and suggested_engine == "faster-whisper"
+    if editions is None:
+        offered = suggested_engine == "faster-whisper"
+    else:
+        edition = editions.get(suggested_engine)
+        from . import gpu_pack
+
+        offered = edition is not None and gpu_pack.driver_can_use(edition,
+                                                                  driver_cuda_version)
+    return (driver_present and not pack_installed and offered
             and vram_gb is not None and vram_gb >= 4)
 
 

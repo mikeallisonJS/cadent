@@ -33,6 +33,12 @@ FAULTS: dict[str, str] = {
     "cleanup-failed": "cleanup unavailable",
     "engine-on-cpu": "speech engine rebuilding on CPU",
     "config-unreadable": "config.json couldn't be read",
+    # The two grant faults (ADR 0012), mutually exclusive: the hotkey
+    # mechanism is absent on this desktop, or it is there and the grant is
+    # missing. Never both — telling a user to grant a permission no dialog
+    # will offer them is worse than silence.
+    "hotkey-unavailable": "this desktop can't give Cadent a hotkey",
+    "permission-needed": "permission needed",
 }
 
 # Offers clear when they are *seen*. Without that split an NVIDIA user who
@@ -146,7 +152,8 @@ class Tray:
                  on_wizard: Callable[[], None],
                  on_gpu_download: Callable[[], None],
                  on_quit: Callable[[], None],
-                 on_message_clicked: Callable[[], None] | None = None) -> None:
+                 on_message_clicked: Callable[[], None] | None = None,
+                 stt_engine: str = "faster-whisper") -> None:
         self.ledger = TrayLedger()
         self._cleanup = False
         self._paused = False
@@ -203,8 +210,8 @@ class Tray:
         self.gpu_separator = self.menu.addSeparator() \
             if self._gpu_pack_available else QAction()
         self.gpu_separator.setVisible(False)
-        self.gpu_action = QAction(
-            f"Download GPU support pack ({gpu_pack.DOWNLOAD_SIZE})")
+        self.gpu_action = QAction("")
+        self.set_gpu_edition(stt_engine)
         self.gpu_action.setVisible(False)
         self.gpu_action.triggered.connect(on_gpu_download)
         if self._gpu_pack_available:
@@ -265,6 +272,13 @@ class Tray:
     def withdraw_gpu_offer(self) -> None:
         """The pack is installed — there is nothing left to offer."""
         self._show_gpu_offer(False)
+
+    def set_gpu_edition(self, stt_engine: str) -> None:
+        """The item names the edition the running engine would read, with
+        its size (ADR 0010) — one surface, engine-keyed."""
+        edition = gpu_pack.edition_for(stt_engine)
+        size = edition.size if edition is not None else gpu_pack.DOWNLOAD_SIZE
+        self.gpu_action.setText(f"Download GPU support pack ({size})")
 
     def _show_gpu_offer(self, shown: bool) -> None:
         """The item and the separator grouping it move together.

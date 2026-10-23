@@ -1,0 +1,1 @@
+Speech recognition now runs on the GPU on older NVIDIA cards such as the GTX 10-series instead of falling back to the processor, and choosing CUDA as the speech runtime in Settings now actually uses the GPU. On macOS, an empty App overrides list now says Cadent pastes into every app rather than claiming it types.

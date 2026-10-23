@@ -146,8 +146,11 @@ SEED_COMMENTS: dict[str, str] = {
 
 @dataclass
 class Config:
-    # Hotkey. Modifier-only chords supported; see chord.py for parsing.
-    hotkey: str = "<ctrl>+<cmd>"          # Ctrl + Win
+    # Hotkey. Modifier-only chords supported; see chord.py for parsing. The
+    # shipped chords are platform facts (ADR 0008): Ctrl+Win everywhere a
+    # hook hears the whole keyboard, a keysym-bearing chord on Linux's
+    # Wayland tiers, which cannot bind modifiers alone.
+    hotkey: str = field(default_factory=lambda: _capabilities().default_combo)
     hotkey_mode: str = "tap_or_hold"      # "hold" | "toggle" | "tap_or_hold"
     min_hold_ms: int = 200                # hold shorter than this discards the utterance
     paused: bool = False                  # persisted pause state
@@ -170,7 +173,8 @@ class Config:
     # Cleanup. The model is a config setting; the default is the M2 ticket-02
     # benchmark winner. A tap chord toggles it (see TapChord).
     cleanup_mode: bool = False
-    cleanup_hotkey: str = "<ctrl>+<shift>+<alt>"
+    cleanup_hotkey: str = field(default_factory=lambda: _capabilities()
+                                .default_cleanup_combo)
     llm_model_path: str = str(MODELS_DIR / "llm" / "Qwen3-4B-Instruct-2507-Q4_K_M.gguf")
     llm_max_tokens: int = 1024
     # Not `llm_device`, for all that it would pair with `stt_device`:

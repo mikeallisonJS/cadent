@@ -14,6 +14,7 @@ Two enforcements, because each catches what the other cannot:
 import ast
 import importlib
 import pkgutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -21,9 +22,16 @@ import pytest
 import cadent
 
 # The per-OS adapter modules: the only legal homes for OS imports. Only the
-# factory (cadent/platform/__init__.py) may import them.
+# factory (cadent/platform/__init__.py) may import them. Linux is a
+# subpackage (ADR 0013), so every module under it is an adapter.
 ADAPTERS = {"cadent.platform.win32", "cadent.platform.darwin"}
+LINUX_PACKAGE = "cadent.platform.linux"
 FACTORY = "cadent.platform"
+PLATFORM_PACKAGE = "cadent.platform"
+
+
+def is_adapter(name: str) -> bool:
+    return name in ADAPTERS or name == LINUX_PACKAGE or name.startswith(LINUX_PACKAGE + ".")
 
 # Top-level distributions that exist on one OS only. `ctypes.windll` is an
 # attribute, not a module, so the scan checks for it separately.
@@ -32,7 +40,13 @@ OS_ONLY_MODULES = {
     "AppKit", "Quartz", "Foundation", "Cocoa", "objc",     # macOS (pyobjc)
     "ApplicationServices",                                 # macOS (pyobjc, #144)
     "fcntl",                                               # Unix only
+    "Xlib", "jeepney",                                     # Linux only (spec §2.5)
 }
+
+# The GUI toolkit never enters the platform package (ADR 0013): the adapters
+# run headless, their callbacks arrive on their own threads, and QtDBus is
+# out by rule.
+GUI_TOOLKIT = {"PySide6", "shiboken6", "PyQt6", "PyQt5"}
 
 PACKAGE_DIR = Path(cadent.__file__).parent
 
@@ -41,6 +55,13 @@ def _walk_error(name):
     # Without this, walk_packages swallows an ImportError raised while
     # descending into a subpackage and its submodules silently never get
     # parametrized — a shrunken walk that still looks green.
+    #
+    # The one exception is the Linux adapter package off Linux: walk_packages
+    # has to import a package to look inside it, and this one imports fcntl
+    # and jeepney by design. Nothing under it is walked anyway (`is_adapter`),
+    # so skipping it there shrinks nothing; on Linux it must still import.
+    if is_adapter(name) and not sys.platform.startswith("linux"):
+        return
     raise RuntimeError(f"import walk could not descend into {name}")
 
 
@@ -48,8 +69,18 @@ def walkable_modules():
     yield "cadent"
     for info in pkgutil.walk_packages([str(PACKAGE_DIR)], prefix="cadent.",
                                       onerror=_walk_error):
-        if info.name not in ADAPTERS:
+        if not is_adapter(info.name):
             yield info.name
+
+
+def adapter_modules():
+    """Every adapter module, by source path — the Linux subpackage included —
+    for the rules that bind adapters too."""
+    yield from ADAPTERS
+    linux = PACKAGE_DIR / "platform" / "linux"
+    for path in sorted(linux.glob("*.py")):
+        stem = path.stem
+        yield LINUX_PACKAGE if stem == "__init__" else f"{LINUX_PACKAGE}.{stem}"
 
 
 def module_path(name: str) -> Path:
@@ -93,7 +124,7 @@ def violations_in(name: str) -> list[str]:
         top = imported.split(".")[0]
         if top in OS_ONLY_MODULES:
             found.append(f"imports OS-only module {imported!r}")
-        if imported in ADAPTERS and name != FACTORY:
+        if is_adapter(imported) and name != FACTORY and not is_adapter(name):
             found.append(f"imports adapter {imported!r} (only the factory may)")
         if imported == "ctypes.windll":
             found.append("imports ctypes.windll")
@@ -116,3 +147,22 @@ def test_the_scan_would_catch_a_real_adapter():
     """The scan proves it has teeth on the one file known to be full of OS
     imports — otherwise a scan that silently matched nothing would pass."""
     assert violations_in("cadent.platform.win32")
+    assert violations_in("cadent.platform.linux.x11")
+
+
+def gui_imports_in(name: str) -> list[str]:
+    path = module_path(name)
+    package = name.split(".") if path.name == "__init__.py" \
+        else name.split(".")[:-1]
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return [imported for imported in imported_names(tree, package)
+            if imported.split(".")[0] in GUI_TOOLKIT]
+
+
+def test_the_platform_package_never_imports_the_gui_toolkit():
+    """ADR 0013's rule, enforced on every adapter and the factory alike: a
+    Qt import under cadent/platform/ fails here on every OS."""
+    names = [FACTORY, "cadent.platform.base", "cadent.platform.fallback",
+             "cadent.platform.keycodes", *adapter_modules()]
+    report = {name: found for name in names if (found := gui_imports_in(name))}
+    assert report == {}

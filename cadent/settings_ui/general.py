@@ -25,8 +25,16 @@ THEME_CHOICES = (("system", "Follow system"), ("light", "Light"), ("dark", "Dark
 # Appearance control and Increase contrast.
 
 
+# The tray-less row (ADR 0014): live state, not a tier fact — a host can
+# arrive mid-session, and naming the extension here is fine because it is a
+# thing to install, not the desktop's own dialog.
+NO_TRAY = ("No system tray found, so Pause and Quit live here. On GNOME, the "
+           "AppIndicator and KStatusNotifierItem Support extension adds one.")
+
+
 class GeneralPane(QWidget):
-    def __init__(self, ctx: PaneContext, high_contrast: bool = False) -> None:
+    def __init__(self, ctx: PaneContext, high_contrast: bool = False,
+                 tray_available: bool = True) -> None:
         super().__init__()
         self.ctx = ctx
         self.setObjectName("Pane")
@@ -86,11 +94,22 @@ class GeneralPane(QWidget):
         # reading as redo rather than as something still to do.
         self.wizard_button = QPushButton("Run setup wizard")
         self.wizard_button.clicked.connect(ctx.request_wizard)
-        layout.addWidget(caps("Setup", t))
-        layout.addWidget(card([
+        setup_rows = [
             row(t, "Setup", self.wizard_button,
                 desc="Walk through microphone, model and hotkey again"),
-        ]))
+        ]
+        # The support tier, named with its consequence attached, on every
+        # Linux session and nowhere else (spec §9.4). Built by the adapter;
+        # this pane only shows it.
+        self.tier_row = None
+        if self._caps.support_tier_summary:
+            self.tier_row = row(t, "This session", desc=self._caps.support_tier_summary)
+            setup_rows.append(self.tier_row)
+        self.tray_row = row(t, "System tray", desc=NO_TRAY)
+        self.tray_row.setVisible(not tray_available)
+        setup_rows.append(self.tray_row)
+        layout.addWidget(caps("Setup", t))
+        layout.addWidget(card(setup_rows))
 
         # Every group is named now: Setup taking the bare-first-card slot would
         # otherwise leave these rows heading-less and reading as Setup's own.
@@ -123,9 +142,10 @@ class GeneralPane(QWidget):
         self.move_button = QPushButton("Move overlay…")
         self.move_button.clicked.connect(ctx.request_move_overlay)
 
-        layout.addSpacing(int(t["sp_2"]))
-        layout.addWidget(caps("Overlay", t))
-        layout.addWidget(card([
+        # The whole card gates on the overlay fact (ADR 0014): where there is
+        # no overlay, failures go to a desktop notification instead and
+        # there is nothing here to move or hide.
+        self.overlay_card = card([
             # The toggle governs the *activity* states only — failures appear
             # regardless, so turning off the indicator never turns off the
             # alarm (§4.8).
@@ -135,10 +155,20 @@ class GeneralPane(QWidget):
                 desc="Soft-snap to the centre and the bottom margin when moving it"),
             row(t, "Overlay position", self.move_button,
                 desc="Drag a stand-in pill; the real one stays click-through"),
-        ]))
+        ])
+        self.overlay_caps = caps("Overlay", t)
+        windowed = self._caps.overlay == "windowed"
+        self.overlay_caps.setVisible(windowed)
+        self.overlay_card.setVisible(windowed)
+        layout.addSpacing(int(t["sp_2"]))
+        layout.addWidget(self.overlay_caps)
+        layout.addWidget(self.overlay_card)
         layout.addStretch()
 
         self.set_high_contrast(high_contrast)
+
+    def set_tray_available(self, available: bool) -> None:
+        self.tray_row.setVisible(not available)
 
     # ---- the microphone meter ---------------------------------------------
 

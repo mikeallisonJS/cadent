@@ -59,6 +59,29 @@ LEARNED_TOOLTIP = "Added automatically after typing failed in this app."
 
 EMPTY_STATE = ("No app overrides. Cadent types into every app, and adds "
                "one automatically if typing fails.")
+# The same line for the platforms that paste first and learn nothing on their
+# own (macOS, the Wayland tiers): the sentence above is wrong on both counts
+# there. Where pasting is unavailable the session note already says Cadent
+# types everywhere, so the empty state says only what is missing.
+PASTE_FIRST_EMPTY_STATE = ("No app overrides. Cadent pastes into every app; add "
+                           "one for an app that needs typing instead.")
+TYPE_ONLY_EMPTY_STATE = "No app overrides. Cadent types into every app."
+
+
+def empty_state(caps) -> str:
+    """The empty-state line this platform's injection column makes true."""
+    if caps.default_injection_strategy == "clipboard" and "paste" in caps.injection_rungs:
+        return PASTE_FIRST_EMPTY_STATE
+    if caps.auto_learn_overrides:
+        return EMPTY_STATE
+    return TYPE_ONLY_EMPTY_STATE
+
+# The two Linux notes (spec §9.4, ADR 0009): the rows stay editable — config
+# is per-machine and the next session may use them — with one line saying
+# what this session does with them.
+NOT_APPLIED = ("Overrides and auto-learn don't apply in this session: your desktop "
+               "doesn't tell Cadent which app is focused.")
+NO_PASTE = ("Pasting isn't available in this session, so Cadent types into every app.")
 
 # Notepad's 500 ms is the one number in the defaults that reads as a mystery.
 NOTEPAD_SETTLE_NOTE = ("A cold Notepad can take over 150 ms to process a "
@@ -87,6 +110,16 @@ class OverridesPane(QWidget):
             "How Cadent inserts text into each app. Overrides Cadent "
             "ships, ones it learned, and ones you wrote all look alike here.",
             "RowDesc"))
+        caps = platform.current().capabilities
+        self.session_note = label("", "RowHint")
+        notes = []
+        if not caps.per_app_overrides:
+            notes.append(NOT_APPLIED)
+        if "paste" not in caps.injection_rungs:
+            notes.append(NO_PASTE)
+        self.session_note.setText(" ".join(notes))
+        self.session_note.setVisible(bool(notes))
+        layout.addWidget(self.session_note)
 
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["App", "Strategy", ""])
@@ -104,7 +137,7 @@ class OverridesPane(QWidget):
         self.table.currentCellChanged.connect(lambda *_: self._show_detail())
         layout.addWidget(self.table, 1)
 
-        self.empty = label(EMPTY_STATE, "RowHint")
+        self.empty = label(empty_state(caps), "RowHint")
         layout.addWidget(self.empty)
 
         self.undo = UndoStrip(t)

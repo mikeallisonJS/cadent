@@ -1,0 +1,51 @@
+# Maintainer: Mike Allison <dj.mikeallison@gmail.com>
+# The AUR package (spec §8.1, ADR 0011): repacks the released tarball — a
+# -bin package, since the onedir is a frozen build, not a source build.
+# Pushed to aur.archlinux.org by hand; this file is the source of truth.
+pkgname=cadent-bin
+pkgver=0.7.0
+pkgrel=1
+pkgdesc="Fully-local push-to-talk AI dictation: transcribe, clean up, insert at the cursor"
+arch=('x86_64')
+url="https://github.com/mikeallisonJS/cadent"
+license=('MIT')
+# alsa-lib is the host requirement the bundle deliberately leaves out: it
+# dlopens the host's own PipeWire plugin. The Vulkan loader runs cleanup on
+# the GPU; without it cleanup lands on the processor, silently.
+depends=('alsa-lib' 'glibc>=2.39' 'xdg-desktop-portal' 'hicolor-icon-theme')
+optdepends=('pipewire-alsa: route the microphone through PipeWire'
+            'vulkan-icd-loader: run transcript cleanup on the GPU'
+            'xdg-desktop-portal-kde: hotkey and typing on Plasma Wayland'
+            'xdg-desktop-portal-gnome: hotkey and typing on GNOME Wayland')
+provides=('cadent')
+conflicts=('cadent')
+options=('!strip')
+source=("https://github.com/mikeallisonJS/cadent/releases/download/v${pkgver}/cadent-${pkgver}-x86_64.tar.zst")
+sha256sums=('SKIP')
+
+package() {
+  install -dm755 "${pkgdir}/opt/cadent"
+  cp -a "${srcdir}/cadent-${pkgver}/." "${pkgdir}/opt/cadent/"
+  install -dm755 "${pkgdir}/usr/bin"
+  ln -s /opt/cadent/Cadent "${pkgdir}/usr/bin/cadent"
+
+  # The desktop entry and icons are the package's (authoritative): Cadent
+  # skips writing its own on first run when this one exists.
+  install -dm755 "${pkgdir}/usr/share/applications"
+  cat > "${pkgdir}/usr/share/applications/com.mikeallisonjs.cadent.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=Cadent
+Comment=Push-to-talk dictation that runs entirely on this PC
+Exec=/opt/cadent/Cadent
+TryExec=/opt/cadent/Cadent
+Icon=com.mikeallisonjs.cadent
+Terminal=false
+Categories=Utility;Accessibility;
+StartupWMClass=com.mikeallisonjs.cadent
+DESKTOP
+  for size in 48 128 256; do
+    install -Dm644 "${srcdir}/cadent-${pkgver}/_internal/icons/png/app-${size}.png" \
+      "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps/com.mikeallisonjs.cadent.png"
+  done
+}

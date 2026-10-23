@@ -3,7 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/cadent)](https://pypi.org/project/cadent/)
 [![Python](https://img.shields.io/pypi/pyversions/cadent)](https://pypi.org/project/cadent/)
 
-Fully-local push-to-talk AI dictation for Windows and macOS, with zero cloud. Hold **Ctrl+Win** (**Ctrl+Cmd** on a Mac), speak, release: clean text appears at your cursor in any app.
+Fully-local push-to-talk AI dictation for Windows, macOS and Linux, with zero cloud. Hold **Ctrl+Win** (**Ctrl+Cmd** on a Mac, **Ctrl+Super** on Linux X11, **Ctrl+Super+Space** on Linux Wayland), speak, release: clean text appears at your cursor in any app.
 
 See **PRD.md** for the full product spec.
 
@@ -20,11 +20,8 @@ Everything runs on-device. The only network activity is the explicit first-run m
 
 ## Setup (Python 3.11+)
 
-Windows and macOS (Apple Silicon) are both supported and both run in CI.
-**Linux is coming**: the platform seam it needs is in place, but there is no
-adapter behind it yet — a Linux checkout falls through to the inert fallback,
-where the hotkey hears nothing and injection prints instead of typing. Runnable
-for development, not yet for dictation.
+Windows, macOS (Apple Silicon) and Linux (x86_64) are all supported and all
+run in CI.
 
 ### Windows
 
@@ -69,11 +66,48 @@ the **Microphone** prompt too: a denied mic raises no error on macOS, it just
 records zeros, so Cadent recognises an all-silent capture and points you at
 Microphone permission instead of transcribing nothing.
 
+### Linux
+
+Cadent ships as an AppImage and a `.tar.zst` for x86_64 — see
+[Releases](https://github.com/mikeallisonJS/cadent/releases) — and as the
+`cadent-bin` AUR package (`packaging/aur/PKGBUILD`). Ubuntu 24.04 or newer,
+or any rolling distro (glibc ≥ 2.39). The AppImage needs nothing installed;
+the tarball needs `libasound2` (`alsa-lib` on Arch) and, for the microphone
+through PipeWire, `pipewire-alsa`.
+
+What you get depends on the session, and Settings ▸ General says which:
+
+- **X11** (any desktop) — everything, like Windows: Ctrl+Super, typing with
+  paste as the fallback, per-app overrides, the overlay pill.
+- **Wayland on KDE Plasma, Sway, Hyprland, SteamOS desktop** — the first-run
+  wizard asks the desktop for the hotkey and typing permissions once; after
+  that Ctrl+Super+Space dictates through the desktop's portals. Paste-first,
+  no overlay (failures arrive as notifications), and the desktop owns the
+  shortcut, so change it in your desktop's settings.
+- **Wayland on GNOME** — as above, without per-app overrides. Stock GNOME has
+  no system tray: Pause and Quit live in Settings, and a second launch opens
+  it. The *AppIndicator and KStatusNotifierItem Support* extension adds a tray.
+
+To run from source:
+
+```sh
+curl -LsSf https://astral.sh/uv/install.sh | sh
+sudo pacman -S portaudio            # Arch/CachyOS; apt install libportaudio2 on Ubuntu/Debian
+git clone https://github.com/mikeallisonJS/cadent && cd cadent
+uv sync --extra cleanup --extra dev
+uv run python -m cadent
+```
+
+**GPU on Linux:** the GPU support pack has two editions, offered from the
+tray when an NVIDIA driver is present and the speech engine landed on the
+CPU — cuBLAS 12 for Whisper, the CUDA 13 runtime for Parakeet (driver 580 or
+newer). Cleanup uses the Vulkan build, so any GPU with a Vulkan driver works.
+
 > The `cadent` name is registered on PyPI, but the published release is a
 > placeholder — `pip install cadent` does **not** get you a working app yet.
 > Use a source checkout until a real release is published.
 
-First run downloads the faster-whisper model (default `small.en`) and creates config at `%LOCALAPPDATA%\Cadent\config.json` (`~/Library/Application Support/Cadent/config.json` on macOS).
+First run downloads the faster-whisper model (default `small.en`) and creates config at `%LOCALAPPDATA%\Cadent\config.json` (`~/Library/Application Support/Cadent/config.json` on macOS, `~/.local/share/Cadent/config.json` on Linux).
 
 **Cleanup:** turn on `Clean up transcripts before inserting them` in Settings ▸ Speech & cleanup and pick one of four models — Cadent downloads the one you pick, once. Off by default, and any cleanup failure silently inserts the raw transcript.
 

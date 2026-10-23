@@ -1,7 +1,9 @@
-# The seam's guarantee, enforced (#143, spec §1.4): the suite runs on both
-# OSes on every push and PR, so an OS import outside a platform adapter fails
-# in CI on the OS that lacks it — the import-walk test makes the rule real.
-# Adapter-internal tests platform-skip themselves.
+# The seam's guarantee, enforced (#143, spec §1.4): the suite runs on all
+# three OSes on every push and PR, so an OS import outside a platform adapter
+# fails in CI on the OS that lacks it — the import-walk test makes the rule
+# real. Adapter-internal tests platform-skip themselves. The Linux leg is
+# headless (spec §2.5): imports, the keycode table, pure logic, fakes at the
+# seams, jeepney message building — no bus, no portal, no compositor.
 
 name: test
 
@@ -31,6 +33,10 @@ jobs:
             qpa: windows
           - os: macos-14
             qpa: offscreen
+          # ubuntu-24.04 pinned by name — the same runner the Linux build
+          # uses, so the glibc floor the artefacts carry is the one tested.
+          - os: ubuntu-24.04
+            qpa: offscreen
     runs-on: ${{ matrix.os }}
     env:
       QT_QPA_PLATFORM: ${{ matrix.qpa }}
@@ -38,6 +44,17 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v5
+
+      - name: Install Linux host libraries
+        if: runner.os == 'Linux'
+        # sounddevice loads libportaudio at import time; Qt's offscreen
+        # platform still wants the X libraries the wheel links against.
+        # Noto Sans is the Linux family in the theme's font stack; without it
+        # fontconfig substitutes DejaVu Sans and the geometry tests measure a
+        # font no Linux target ships as its UI face.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libportaudio2 libegl1 libxkbcommon0 libgl1 fonts-noto-core
 
       - name: Install dependencies
         run: uv sync --extra dev

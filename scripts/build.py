@@ -2,10 +2,12 @@
 
 Usage: python scripts/build.py [--skip-sync]
 
-Produces dist/Cadent/ on Windows and dist/Cadent.app on macOS (#171), per
-packaging/cadent.spec, then verifies the load-bearing files the M3 packaging
-research (#40) identified are present — a build that passes here can still
-fail at runtime, so follow with scripts/smoke_frozen.py.
+Produces dist/Cadent/ on Windows and Linux and dist/Cadent.app on macOS
+(#171), per packaging/cadent.spec, then verifies the load-bearing files the
+M3 packaging research (#40) identified are present — and, on Linux, that the
+one file excluded on purpose stayed out. A build that passes here can still
+fail at runtime, so follow with scripts/smoke_frozen.py. Linux artefacts
+(tarball + AppImage) come from scripts/build_linux.py afterwards.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 IS_DARWIN = sys.platform == "darwin"
+IS_LINUX = sys.platform.startswith("linux")
 
 # The .app is the artefact on macOS; the dist/Cadent/ onedir PyInstaller
 # assembles it from is scaffolding, and checking it instead would pass on a
@@ -66,6 +69,39 @@ LOAD_BEARING = {
         "*/platforms/libqcocoa.dylib",                 # Qt can't start without
         "*/_sounddevice_data/portaudio-binaries/libportaudio*.dylib",
     ],
+    # Eleven rows (spec §8.5, ADR 0011), three with no Windows/macOS twin:
+    # the staged libportaudio, the ORT CUDA provider, the Wayland shell plugin.
+    "linux": [
+        "Cadent",
+        "*/libctranslate2*.so*",                       # custom hook: STT engine
+        "*/llama_cpp/lib/libllama.so",                 # custom hook: ctypes-loaded
+        # The Vulkan backend of the same wheel (#116), found by scanning lib/:
+        # without it cleanup runs on the processor and says nothing.
+        "*/llama_cpp/lib/libggml-vulkan.so",
+        "*/faster_whisper/assets/silero_vad_v6.onnx",  # vad_filter=True
+        "*/onnx_asr/preprocessors/data/nemo128.onnx",
+        # The GPU wheel, not the CPU one (ADR 0010): the CPU wheel provides the
+        # same onnxruntime package, so a build that picked it up looks complete
+        # and leaves Parakeet's CUDA rung with no provider to land on.
+        "*/onnxruntime/capi/libonnxruntime_providers_cuda.so",
+        # Either platform plugin missing means a dead session type.
+        "*/platforms/libqxcb.so",
+        "*/platforms/libqwayland-generic.so",
+        # Without the shell integration there is Wayland, but no window.
+        "*/wayland-shell-integration/libxdg-shell.so",
+        # Staged by the build, not brought by the wheel: no manylinux
+        # sounddevice wheel bundles PortAudio (spec §8.5).
+        "*/libportaudio.so*",
+    ],
+}
+
+# Excluded on purpose (spec §8.5) — recorded beside LOAD_BEARING so a refactor
+# cannot re-add it: alsa-lib dlopens host plugins (`pcm_pipewire` among them)
+# against the host's own config, so a bundled copy breaks microphone routing
+# silently. `libjack.so.0` rides along — inert without a JACK server, and
+# libportaudio fails to load without it. The host requirement is libasound2.
+EXCLUDED_ON_PURPOSE = {
+    "linux": ["*/libasound.so*"],
 }
 
 
@@ -112,12 +148,20 @@ def main() -> int:
         return 1
 
     files = collected(DIST)
-    missing = [pattern for pattern in LOAD_BEARING.get(sys.platform, [])
+    key = "linux" if IS_LINUX else sys.platform
+    missing = [pattern for pattern in LOAD_BEARING.get(key, [])
                if not any(fnmatch(rel, pattern) for rel in files)]
     if missing:
         print("BUILD INCOMPLETE — missing load-bearing files:", file=sys.stderr)
         for pattern in missing:
             print(f"  {pattern}", file=sys.stderr)
+        return 1
+    smuggled = [rel for pattern in EXCLUDED_ON_PURPOSE.get(key, [])
+                for rel in files if fnmatch(rel, pattern)]
+    if smuggled:
+        print("BUILD INCOMPLETE — files excluded on purpose were bundled:", file=sys.stderr)
+        for rel in smuggled:
+            print(f"  {rel}", file=sys.stderr)
         return 1
 
     total = sum(files.values())

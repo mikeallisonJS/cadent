@@ -1853,7 +1853,7 @@ def test_the_banner_deep_links_to_system_settings(qt_app, paths, monkeypatch):
     win, plat = darwin_window(paths, monkeypatch, granted=False)
     button = win.permission_banner.findChild(QPushButton)
     button.click()
-    assert plat.desktop.permission_settings_opens == 1
+    assert plat.desktop.permission_requests == 1
     win.close()
 
 
