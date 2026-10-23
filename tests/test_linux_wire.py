@@ -10,7 +10,9 @@ import os
 
 import pytest
 
-from cadent.platform.linux import wire
+pytest.importorskip("cadent.platform.linux",
+                    reason="jeepney and python-xlib are Linux-only dependencies")
+from cadent.platform.linux import wire  # noqa: E402
 
 
 class FakeProxy:
