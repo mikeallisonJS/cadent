@@ -49,9 +49,12 @@ jobs:
         if: runner.os == 'Linux'
         # sounddevice loads libportaudio at import time; Qt's offscreen
         # platform still wants the X libraries the wheel links against.
+        # Noto Sans is the Linux family in the theme's font stack; without it
+        # fontconfig substitutes DejaVu Sans and the geometry tests measure a
+        # font no Linux target ships as its UI face.
         run: |
           sudo apt-get update
-          sudo apt-get install -y libportaudio2 libegl1 libxkbcommon0 libgl1
+          sudo apt-get install -y libportaudio2 libegl1 libxkbcommon0 libgl1 fonts-noto-core
 
       - name: Install dependencies
         run: uv sync --extra dev

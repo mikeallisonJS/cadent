@@ -34,6 +34,26 @@ class SttEngine(Protocol):
                    hotwords: str | None = None) -> str: ...
 
 
+# Best first. float16 where the card has fast half precision (Volta and
+# newer); int8 weights over float32 maths on Pascal, which CTranslate2 refuses
+# float16 on outright rather than running it slowly.
+_CUDA_COMPUTE_TYPES = ("float16", "int8_float16", "int8_float32", "float32")
+
+
+def _cuda_compute_type() -> str:
+    """The best type this card runs, asked of CTranslate2 itself. float16 when
+    the question can't be answered: the load that follows fails the same way
+    and the CPU rung catches it."""
+    try:
+        import ctranslate2
+
+        supported = ctranslate2.get_supported_compute_types("cuda")
+    except Exception:
+        log.debug("could not read CUDA compute types", exc_info=True)
+        return "float16"
+    return next((t for t in _CUDA_COMPUTE_TYPES if t in supported), "float16")
+
+
 class FasterWhisperEngine:
     device: str  # where the model actually landed; gates the GPU-pack offer (#55)
     supports_hotwords = True
@@ -51,10 +71,11 @@ class FasterWhisperEngine:
 
         # On a one-rung platform (darwin, ADR 0003) `auto` goes straight to
         # the CPU: ctranslate2 ships no Metal backend, so the CUDA
-        # construction below could only fail and log.
-        if device == "auto" and "cuda" in _allowed_runtimes("faster-whisper"):
+        # construction below could only fail and log. A `cuda` pin climbs the
+        # same ladder Parakeet's does: the GPU first, the CPU after it.
+        if device in ("auto", "cuda") and "cuda" in _allowed_runtimes("faster-whisper"):
             try:
-                model = load("cuda", "float16")
+                model = load("cuda", _cuda_compute_type())
                 # CTranslate2 loads cuBLAS/cuDNN lazily, so constructing on
                 # CUDA succeeds even when the runtime can't load — the failure
                 # would surface at the first dictation (#38). Commit to CUDA
@@ -69,7 +90,7 @@ class FasterWhisperEngine:
                 return
             except Exception:
                 log.warning("CUDA unusable; falling back to CPU", exc_info=True)
-        self.model = load("cpu", "float16" if device == "cuda" else "int8")
+        self.model = load("cpu", "int8")
         self.device = "cpu"
 
     def transcribe(self, audio: np.ndarray, sample_rate: int,

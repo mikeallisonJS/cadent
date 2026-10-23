@@ -262,6 +262,15 @@ def test_describe_combo_uppercases_the_plain_keys():
     assert describe_combo("<ctrl>+<shift>+a", DARWIN_CAPTIONS) == "Ctrl+Shift+A"
 
 
+def test_describe_combo_writes_a_named_key_as_a_word():
+    """The Wayland default ends in a named key; it read "Ctrl+Super+SPACE"."""
+    from cadent.chord import describe_combo
+
+    linux = {"ctrl": "Ctrl", "cmd": "Super"}
+    assert describe_combo("<ctrl>+<cmd>+space", linux) == "Ctrl+Super+Space"
+    assert describe_combo("<ctrl>+page_up", linux) == "Ctrl+Page Up"
+
+
 def test_describe_combo_never_raises_on_a_combo_parse_would_reject():
     """Display copy must not crash a label over a config parse_combo already
     polices; best-effort words are better than an exception in a paint."""

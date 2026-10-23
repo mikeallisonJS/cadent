@@ -385,13 +385,20 @@ class DataControlClipboard:
             if old is not None and old is not self._offer:
                 old.request("destroy")
 
-    def _on_source_event(self, name: str, args: tuple) -> None:
+    def _on_source_event(self, source: Proxy, name: str, args: tuple) -> None:
+        """Events for one source, which answers only for its own text.
+
+        Per source, never shared: `set_selection` on a new source is followed
+        by `cancelled` on the one it replaced, and a paste reads the new one
+        right after. A cancel that cleared shared state answered that read
+        with nothing — every paste after a process's first came up empty, and
+        the clipboard restore put back an empty string."""
         if name == "send":
             mime, fd = args
             try:
                 if fd >= 0:
                     payload = b"secret" if mime == KDE_HINT_MIME else \
-                        (self._text or "").encode("utf-8")
+                        source.data.get("payload", b"")
                     os.write(fd, payload)
             except OSError:
                 log.debug("clipboard send failed", exc_info=True)
@@ -399,8 +406,11 @@ class DataControlClipboard:
                 if fd >= 0:
                     os.close(fd)
         elif name == "cancelled":
+            # Destroyed by the `set_text` that replaced it, never here: a
+            # second destroy names a dead id and drops the connection.
             with self._lock:
-                self._text = None
+                if source is self._source:
+                    self._text = None
 
     def get_text(self) -> str | None:
         with self._lock:
@@ -440,7 +450,8 @@ class DataControlClipboard:
     def set_text(self, text: str, exclude_from_history: bool) -> None:
         source = self._conn.request_new(self._manager, "create_data_source",
                                         "ext_data_control_source_v1")
-        source.handler = self._on_source_event
+        source.data["payload"] = text.encode("utf-8")
+        source.handler = lambda name, args, s=source: self._on_source_event(s, name, args)
         for mime in TEXT_MIMES:
             source.request("offer", mime)
         if exclude_from_history:

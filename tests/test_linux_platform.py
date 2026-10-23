@@ -83,6 +83,7 @@ def test_whole_is_windows_parity_with_an_empty_override_table():
     assert caps.permission is None
     assert caps.overlay == "windowed"
     assert caps.per_app_overrides is True
+    assert caps.sided_hotkeys is True
     assert caps.default_overrides == ()
     assert caps.default_combo == "<ctrl>+<cmd>"
     assert caps.default_cleanup_combo == "<ctrl>+<shift>+<alt>"
@@ -101,6 +102,7 @@ def test_the_wayland_tiers_paste_first_with_a_keysym_chord_and_no_overlay():
         assert caps.default_combo == "<ctrl>+<cmd>+space"
         assert caps.default_cleanup_combo == "<ctrl>+<cmd>+c"
         assert caps.tray_click_toggles_pause is False
+        assert caps.sided_hotkeys is False
     assert linux.capabilities(linux.detect_tier(WAYLAND_GNOME), per_app_overrides=False,
                               paste=True).per_app_overrides is False
 

@@ -13,10 +13,13 @@ from __future__ import annotations
 BASE: dict[str, object] = {
     # --- type -------------------------------------------------------------
     # A stack, not a name: Qt 6 QSS feeds the whole list to QFont.setFamilies,
-    # so Windows keeps Segoe UI and macOS lands on a deliberate fallback
-    # instead of whatever the missing-family alias happens to resolve to
-    # (whose wider metrics wrap one-line hints, see test_settings_ui).
-    "font_family": '"Segoe UI", "Helvetica Neue"',
+    # so Windows keeps Segoe UI and macOS and Linux land on a deliberate
+    # fallback instead of whatever the missing-family alias happens to resolve
+    # to (whose wider metrics wrap one-line hints, see test_settings_ui). Noto
+    # Sans is the UI font on Plasma, SteamOS and Fedora; fontconfig's alias for
+    # a missing family is DejaVu Sans on Ubuntu, wide enough to elide the
+    # sidebar at 225% and wrap the Microphone hint at 100%.
+    "font_family": '"Segoe UI", "Helvetica Neue", "Noto Sans"',
     "fs_display": 22,     # wizard title
     "fs_title": 18,       # settings page title
     "fs_row": 10.5,       # setting row title

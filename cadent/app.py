@@ -166,6 +166,10 @@ class CadentApp:
 
         self.qt = QApplication(sys.argv)
         self.qt.setQuitOnLastWindowClosed(False)
+        # Not left to argv[0]: under `python -m cadent` that is "__main__.py",
+        # and Qt hands it to the desktop as the tray item's Id and Title — the
+        # name Plasma's System Tray settings list Cadent under.
+        self.qt.setApplicationName(cfg.APP_NAME)
         # The desktop-file id Qt derives the Wayland app_id from — the one
         # identity ADR 0009 picked for every other app, applied to ourselves
         # (ADR 0011). Harmless where nothing reads it.

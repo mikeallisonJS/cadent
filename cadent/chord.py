@@ -95,7 +95,12 @@ def _caption(part: str, captions: Mapping[str, str]) -> str:
             base = part[:-2]
         if base is not None:
             return f"{word} {captions[base]}"
-    return part.upper()
+    # A letter or a function key in capitals ("A", "F9"); a named key as a
+    # word ("Space", "Page Up") — the Wayland default chord ends in a named
+    # key, and "Ctrl+Super+SPACE" read as a shout.
+    if len(part) == 1:
+        return part.upper()
+    return part.replace("_", " ").title()
 
 
 @dataclass(frozen=True)

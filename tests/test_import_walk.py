@@ -14,6 +14,7 @@ Two enforcements, because each catches what the other cannot:
 import ast
 import importlib
 import pkgutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -54,6 +55,13 @@ def _walk_error(name):
     # Without this, walk_packages swallows an ImportError raised while
     # descending into a subpackage and its submodules silently never get
     # parametrized — a shrunken walk that still looks green.
+    #
+    # The one exception is the Linux adapter package off Linux: walk_packages
+    # has to import a package to look inside it, and this one imports fcntl
+    # and jeepney by design. Nothing under it is walked anyway (`is_adapter`),
+    # so skipping it there shrinks nothing; on Linux it must still import.
+    if is_adapter(name) and not sys.platform.startswith("linux"):
+        return
     raise RuntimeError(f"import walk could not descend into {name}")
 
 

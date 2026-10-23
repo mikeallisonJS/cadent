@@ -43,9 +43,17 @@ def fake_whisper(monkeypatch):
     FakeWhisperModel.calls = []
     FakeWhisperModel.fail_devices = set()
     FakeWhisperModel.lazy_fail_devices = set()
+    # A Turing-or-newer card unless a test says otherwise: what the CUDA
+    # rung asks for is read off the card, never off the developer's own GPU.
+    FakeWhisperModel.cuda_types = {"float32", "float16", "int8", "int8_float16",
+                                   "int8_float32"}
     module = types.ModuleType("faster_whisper")
     module.WhisperModel = FakeWhisperModel
     monkeypatch.setitem(sys.modules, "faster_whisper", module)
+    ct2 = types.ModuleType("ctranslate2")
+    ct2.get_supported_compute_types = \
+        lambda device: set(FakeWhisperModel.cuda_types) if device == "cuda" else {"int8"}
+    monkeypatch.setitem(sys.modules, "ctranslate2", ct2)
     return FakeWhisperModel
 
 
@@ -87,6 +95,41 @@ def test_engine_reports_cuda_when_probe_succeeds(fake_whisper):
 def test_engine_reports_cpu_after_cuda_fallback(fake_whisper):
     fake_whisper.lazy_fail_devices = {"cuda"}
     engine = make_engine("faster-whisper", "small.en", "auto")
+    assert engine.device == "cpu"
+
+
+def test_a_card_with_fast_half_precision_runs_float16(fake_whisper):
+    make_engine("faster-whisper", "small.en", "auto")
+    assert fake_whisper.calls[0]["compute_type"] == "float16"
+
+
+def test_a_card_without_fast_half_precision_still_gets_the_gpu(fake_whisper):
+    """Pascal (a GTX 10-series) has no efficient float16, and CTranslate2
+    refuses the model outright when asked for it — so a hard-coded float16
+    sent every such card to the CPU with a working CUDA runtime installed.
+    The rung asks for a type the card has instead."""
+    fake_whisper.cuda_types = {"float32", "int8", "int8_float32"}
+    engine = make_engine("faster-whisper", "small.en", "auto")
+    (call,) = fake_whisper.calls
+    assert (call["device"], call["compute_type"]) == ("cuda", "int8_float32")
+    assert engine.device == "cuda"
+
+
+def test_pinning_cuda_puts_the_model_on_the_gpu(fake_whisper):
+    """Settings offers `cuda` for faster-whisper on Windows and Linux. It
+    loaded the model on the CPU in float16 — a type CTranslate2 has no CPU
+    kernel for — so the pin never reached the GPU and usually failed outright."""
+    engine = make_engine("faster-whisper", "small.en", "cuda")
+    assert fake_whisper.calls[0]["device"] == "cuda"
+    assert engine.device == "cuda"
+
+
+def test_a_pinned_cuda_that_cannot_load_falls_back_to_the_cpu_in_int8(fake_whisper):
+    """The same ladder Parakeet's `cuda` pin climbs: the GPU first, the CPU
+    after it, in the CPU's own type."""
+    fake_whisper.lazy_fail_devices = {"cuda"}
+    engine = make_engine("faster-whisper", "small.en", "cuda")
+    assert [(c["device"], c["compute_type"]) for c in fake_whisper.calls][-1] == ("cpu", "int8")
     assert engine.device == "cpu"
 
 

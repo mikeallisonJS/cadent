@@ -191,6 +191,7 @@ def capabilities(session: Session, *, per_app_overrides: bool, paste: bool) -> C
         high_contrast_reason=("Your desktop is set to higher contrast, so Cadent is "
                               "following your system colours"),
         per_app_overrides=per_app_overrides,
+        sided_hotkeys=whole,
         overlay="windowed" if whole else None,
         support_tier=session.tier,
         support_tier_summary=support_tier_summary(

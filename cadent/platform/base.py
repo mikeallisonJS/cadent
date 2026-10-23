@@ -189,6 +189,11 @@ class Capabilities:
     # Wayland exposes none), where the pane stays editable with a note
     # (ADR 0009).
     per_app_overrides: bool = True
+    # Whether a recorded hotkey can name a side — Right Ctrl rather than
+    # either Ctrl (#64). False on the Wayland tiers: the desktop binds the
+    # shortcut, and the portal's trigger grammar has no sides, so a sided
+    # chord binds as its unsided twin. The Hotkeys pane drops the toggle.
+    sided_hotkeys: bool = True
     # The overlay pill: "windowed" (today's overlay.py, Move mode included),
     # None (no overlay — failures go to the tray's message), or "anchored"
     # (reserved for a layer-shell helper; unused). ADR 0014.

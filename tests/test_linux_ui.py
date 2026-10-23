@@ -115,6 +115,37 @@ def test_the_hotkeys_pane_shows_the_desktops_binding(qt_app, tmp_path, monkeypat
     win.close()
 
 
+def test_the_note_explains_a_stored_chord_the_desktop_could_not_bind(qt_app, tmp_path,
+                                                                     monkeypatch):
+    """A modifiers-only cleanup chord (the X11 default) has no portal trigger,
+    so the desktop kept an earlier binding while the button still shows the
+    stored chord. The note has to say why the two disagree."""
+    (tmp_path / "config.json").write_text(
+        '{"hotkey": "<ctrl>+<cmd>+space", "cleanup_hotkey": "<ctrl>+<shift>+<alt>"}')
+    pin_linux_ui_platform(monkeypatch, tier="portal",
+                          bound={"dictate": "Ctrl+Meta+Space", "cleanup": "Meta+Ctrl+C"})
+    win = window(tmp_path)
+    text = win.hotkeys.desktop_binding.text()
+    assert "Cleanup is bound to Meta+Ctrl+C" in text
+    assert "Ctrl+Shift+Alt, has no key and can't bind here" in text
+    assert "Dictation is bound to Ctrl+Meta+Space." in text      # bindable: no note
+    win.close()
+
+
+def test_left_and_right_are_offered_only_where_cadent_binds_the_hotkey(qt_app, tmp_path,
+                                                                       monkeypatch):
+    """The portal's trigger grammar has no sides: a Right Ctrl chord binds as
+    either Ctrl, so the toggle's promise is false on the Wayland tiers."""
+    pin_linux_ui_platform(monkeypatch, tier="portal")
+    win = window(tmp_path)
+    assert "Tell left from right" not in labels(win.hotkeys)
+    win.close()
+    pin_linux_ui_platform(monkeypatch, tier="whole")
+    win = window(tmp_path)
+    assert "Tell left from right" in labels(win.hotkeys)
+    win.close()
+
+
 def test_the_hotkeys_pane_says_super_not_win(qt_app, tmp_path, monkeypatch):
     pin_linux_ui_platform(monkeypatch, tier="whole")
     win = window(tmp_path)
@@ -147,6 +178,45 @@ def test_the_overrides_pane_says_when_pasting_is_unavailable(qt_app, tmp_path, m
     win = window(tmp_path)
     assert win.overrides.session_note.isVisibleTo(win.overrides) is False
     win.close()
+
+
+def empty_state_of(tmp_path):
+    win = window(tmp_path)
+    for override in list(win.store.config.app_overrides):
+        win.store.config.app_overrides.remove(override)
+    win.overrides.reload()
+    text = win.overrides.empty.text()
+    win.close()
+    return text
+
+
+def test_the_empty_state_says_a_paste_first_tier_pastes(qt_app, tmp_path, monkeypatch):
+    """The Windows line — types everywhere, learns on failure — is false twice
+    over on a tier that pastes first and never learns (ADR 0007)."""
+    pin_linux_ui_platform(monkeypatch, tier="portal")
+    text = empty_state_of(tmp_path)
+    assert "pastes into every app" in text
+    assert "automatically" not in text
+
+
+def test_the_empty_state_says_typing_where_pasting_is_unavailable(qt_app, tmp_path,
+                                                                    monkeypatch):
+    pin_linux_ui_platform(monkeypatch, tier="portal", paste=False)
+    text = empty_state_of(tmp_path)
+    assert "types into every app" in text
+    assert "automatically" not in text
+
+
+def test_the_empty_state_teaches_auto_learn_where_x11_learns(qt_app, tmp_path, monkeypatch):
+    pin_linux_ui_platform(monkeypatch, tier="whole")
+    assert "one automatically if typing fails" in empty_state_of(tmp_path)
+
+
+def test_the_empty_state_says_macos_pastes_too(qt_app, tmp_path, monkeypatch):
+    from conftest import pin_darwin_ui_platform
+
+    pin_darwin_ui_platform(monkeypatch)
+    assert "pastes into every app" in empty_state_of(tmp_path)
 
 
 # ---- the permission surfaces (§9, ADR 0012) ---------------------------------------------
@@ -215,7 +285,7 @@ def test_the_hotkey_copy_names_the_bound_chord_on_wayland(qt_app, tmp_path, monk
     try:
         while wiz.page != DONE:
             wiz.advance()
-        assert any("Ctrl+Super+SPACE" in text for text in labels(wiz))
+        assert any("Ctrl+Super+Space" in text for text in labels(wiz))
     finally:
         wiz._completed = True
         wiz.close()

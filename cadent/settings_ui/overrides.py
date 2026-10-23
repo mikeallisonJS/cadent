@@ -59,6 +59,22 @@ LEARNED_TOOLTIP = "Added automatically after typing failed in this app."
 
 EMPTY_STATE = ("No app overrides. Cadent types into every app, and adds "
                "one automatically if typing fails.")
+# The same line for the platforms that paste first and learn nothing on their
+# own (macOS, the Wayland tiers): the sentence above is wrong on both counts
+# there. Where pasting is unavailable the session note already says Cadent
+# types everywhere, so the empty state says only what is missing.
+PASTE_FIRST_EMPTY_STATE = ("No app overrides. Cadent pastes into every app; add "
+                           "one for an app that needs typing instead.")
+TYPE_ONLY_EMPTY_STATE = "No app overrides. Cadent types into every app."
+
+
+def empty_state(caps) -> str:
+    """The empty-state line this platform's injection column makes true."""
+    if caps.default_injection_strategy == "clipboard" and "paste" in caps.injection_rungs:
+        return PASTE_FIRST_EMPTY_STATE
+    if caps.auto_learn_overrides:
+        return EMPTY_STATE
+    return TYPE_ONLY_EMPTY_STATE
 
 # The two Linux notes (spec §9.4, ADR 0009): the rows stay editable — config
 # is per-machine and the next session may use them — with one line saying
@@ -121,7 +137,7 @@ class OverridesPane(QWidget):
         self.table.currentCellChanged.connect(lambda *_: self._show_detail())
         layout.addWidget(self.table, 1)
 
-        self.empty = label(EMPTY_STATE, "RowHint")
+        self.empty = label(empty_state(caps), "RowHint")
         layout.addWidget(self.empty)
 
         self.undo = UndoStrip(t)

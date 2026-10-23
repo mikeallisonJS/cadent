@@ -717,6 +717,7 @@ def pin_linux_ui_platform(monkeypatch, *, tier="portal", granted=True, running=N
         high_contrast_reason=("Your desktop is set to higher contrast, so Cadent is "
                               "following your system colours"),
         per_app_overrides=per_app_overrides,
+        sided_hotkeys=whole,
         overlay="windowed" if whole else None,
         support_tier=tier,
         support_tier_summary=summaries[tier],

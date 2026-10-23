@@ -37,8 +37,10 @@ from ..theme.manager import tracked_caps
 # How much of a row a combo whose items are *data* — device names, filenames —
 # may claim, in characters. Characters rather than pixels so the cap scales
 # with Windows' Text size setting exactly as the label beside it does (§8.5);
-# a pixel maximum is the same bug at 225% that this is fixing at 100%.
-COMBO_CHARS = 22
+# a pixel maximum is the same bug at 225% that this is fixing at 100%. Twenty,
+# not twenty-two: Noto Sans sets the Microphone hint ten pixels wider than
+# Segoe UI does, and at twenty-two the combo took exactly those ten pixels.
+COMBO_CHARS = 20
 
 
 def open_in_explorer(path: Path) -> None:
