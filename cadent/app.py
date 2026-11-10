@@ -129,12 +129,17 @@ class CadentApp:
         # Focus-visible: ring on Tab, nothing on click. Held on self because
         # an event filter that gets collected silently stops filtering.
         self.focus_filter = a11y.install(self.qt)
-        self.overlay = Overlay(self.config, self.theme.tokens, platform=self.platform)
-        self.overlay.level_source = lambda: self.recorder.level
-        # Realized at startup rather than on the first show: otherwise the
-        # first pill of every session pays window-creation and first-paint
-        # cost no later one does (§4.6).
-        self.overlay.realize()
+        # Built only where the platform fact says a pill can exist; elsewhere
+        # failures go to the tray's message instead (spec §10.3).
+        self.overlay: Overlay | None = None
+        if self.platform.capabilities.overlay == "windowed":
+            self.overlay = Overlay(self.config, self.theme.tokens,
+                                   platform=self.platform)
+            self.overlay.level_source = lambda: self.recorder.level
+            # Realized at startup rather than on the first show: otherwise the
+            # first pill of every session pays window-creation and first-paint
+            # cost no later one does (§4.6).
+            self.overlay.realize()
         self.history_window: HistoryWindow | None = None
         self.settings_window: SettingsWindow | None = None
         self.wizard = None
@@ -150,12 +155,13 @@ class CadentApp:
         self._downloads: dict[str, downloads.Download] = {}
 
         self.bridge = _Bridge()
-        self.bridge.started.connect(self.overlay.show_recording)
-        self.bridge.processing.connect(self.overlay.show_transcribing)
-        # A mid-hold cancel used to make the pill simply vanish, which is
-        # indistinguishable from a crash.
-        self.bridge.discarded.connect(self.overlay.show_cancelled)
-        self.bridge.cleaning.connect(self.overlay.show_cleaning)
+        if self.overlay is not None:
+            self.bridge.started.connect(self.overlay.show_recording)
+            self.bridge.processing.connect(self.overlay.show_transcribing)
+            # A mid-hold cancel used to make the pill simply vanish, which is
+            # indistinguishable from a crash.
+            self.bridge.discarded.connect(self.overlay.show_cancelled)
+            self.bridge.cleaning.connect(self.overlay.show_cleaning)
         self.bridge.paused_press.connect(self._on_paused_press)
         self.bridge.max_utterance.connect(self._on_max_utterance_toast)
         self.bridge.reported.connect(self._handle_report)
@@ -182,7 +188,8 @@ class CadentApp:
                                               on_error=self.bridge.llm_failed.emit)
 
         self._setup_tray()
-        self.overlay.set_cleanup(self.config.cleanup_mode)
+        if self.overlay is not None:
+            self.overlay.set_cleanup(self.config.cleanup_mode)
         self.ptt = self._make_ptt()
 
         if self._needs_setup():
@@ -564,7 +571,8 @@ class CadentApp:
     def _apply_cleanup(self, on: bool) -> None:
         """Single entry point for the toggle (tray click, hotkey, startup)."""
         self.store.set("cleanup_mode", on)
-        self.overlay.set_cleanup(on)
+        if self.overlay is not None:
+            self.overlay.set_cleanup(on)
         self.tray.set_cleanup(on)
         self.llm_lifecycle.set_wanted(on and not self.config.paused)
 
@@ -700,14 +708,15 @@ class CadentApp:
                     "(typing failed there).",
                     QSystemTrayIcon.MessageIcon.Information, 6_000)
         if report.outcome in ("empty", "inserted", "fallback"):
-            self.overlay.hide_overlay()   # success is silent
+            if self.overlay is not None:
+                self.overlay.hide_overlay()   # success is silent
             words = len(report.text.split())
             self._tell_wizard(f"Inserted {words} word{'' if words == 1 else 's'}"
                               if words else "Nothing heard — try again")
             return
         if report.outcome == "not-ready":
             # The one outcome that had no detail channel at all (§4.2).
-            self.overlay.show_failure("Model loading")
+            self._show_failure("Model loading")
             self.tray.message(
                 "Cadent — not ready yet",
                 "The speech model is still loading — try again in a moment.",
@@ -716,7 +725,7 @@ class CadentApp:
         if report.outcome == "notify-only":
             # A wordless success-hide teaches the user their words vanished
             # for no reason (§4.2).
-            self.overlay.show_failure("Not inserted")
+            self._show_failure("Not inserted")
             # Deliberately inert: notify-only fires for a configured "Don't
             # insert" row *and* for an elevated foreground window, and the
             # elevated case is unfixable by any override — UIPI blocks the
@@ -736,7 +745,7 @@ class CadentApp:
             # reaching the wedged engine.
             self._stt = None
             self.tray.set_fault("engine-on-cpu")
-            self.overlay.show_failure("Dictation failed")
+            self._show_failure("Dictation failed")
             self.tray.message(
                 "Cadent — speech engine crashed",
                 "Nothing was transcribed. Restarting the speech engine on CPU…",
@@ -746,19 +755,29 @@ class CadentApp:
         if not report.text:
             # Failed before a transcript existed (mic unavailable, pipeline
             # crash) — don't claim one is in History (#38).
-            self.overlay.show_failure("Dictation failed")
+            self._show_failure("Dictation failed")
             self.tray.message("Cadent — dictation failed",
                                   (report.detail or "unexpected error")[:200],
                                   QSystemTrayIcon.MessageIcon.Warning, 6_000)
             return
-        self.overlay.show_failure("Insertion failed")
+        self._show_failure("Insertion failed")
         where = "on your clipboard and in History" if report.on_clipboard else "in History"
         self.tray.message("Cadent — insertion failed",
                               f"The transcript is {where}.",
                               QSystemTrayIcon.MessageIcon.Warning, 6_000)
 
+    def _show_failure(self, label: str) -> None:
+        """The pill's failure state where there is a pill; otherwise the
+        tray's message, which Qt delivers as a desktop notification (§10.3)."""
+        if self.overlay is not None:
+            self.overlay.show_failure(label)
+        else:
+            self.tray.message("Cadent", label,
+                              QSystemTrayIcon.MessageIcon.Warning, 6_000)
+
     def _on_paused_press(self) -> None:
-        self.overlay.show_paused()
+        if self.overlay is not None:
+            self.overlay.show_paused()
 
     def _on_max_utterance_toast(self) -> None:
         """Not a pill state: the pill's job at that moment is to show that
@@ -836,7 +855,8 @@ class CadentApp:
             # can answer with the Paused pill instead of nothing (§4.3).
             self.recorder.stop()
             self._end_recording()
-            self.overlay.hide_overlay()
+            if self.overlay is not None:
+                self.overlay.hide_overlay()
         # Charter: the LLM never sits resident while paused.
         self.llm_lifecycle.set_wanted(self.config.cleanup_mode and not checked)
         self.tray.set_paused(checked)
@@ -1020,7 +1040,7 @@ class CadentApp:
             self.history.prune(self.config.history_retention_days)
         elif field == "autostart":
             self.platform.autostart.set_enabled(self.config.autostart)
-        elif field == "show_overlay":
+        elif field == "show_overlay" and self.overlay is not None:
             self.overlay.set_show_activity(self.config.show_overlay)
 
         engine = settings_logic.engine_for(field)
@@ -1056,7 +1076,8 @@ class CadentApp:
     def _on_theme_changed(self) -> None:
         """A live theme change re-renders the sheet; the custom painters read
         the token dict directly and have to be told."""
-        self.overlay.set_tokens(self.theme.tokens)
+        if self.overlay is not None:
+            self.overlay.set_tokens(self.theme.tokens)
         if self.settings_window is not None:
             self.settings_window.general.set_high_contrast(
                 self.theme.high_contrast)

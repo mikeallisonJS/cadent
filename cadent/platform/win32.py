@@ -267,7 +267,7 @@ class Win32HotkeyTap:
     def __init__(self) -> None:
         self._listener = None
 
-    def start(self, on_event) -> None:
+    def start(self, on_event, chords: tuple[str, ...] = ()) -> None:
         if self._listener is not None:
             return
         from pynput import keyboard
@@ -656,6 +656,12 @@ CAPABILITIES = Capabilities(
     theme_subtitle="Follows your Windows app colour mode",
     high_contrast_reason=("Windows is using a contrast theme, so Cadent is "
                           "following your system colours"),
+    overlay="windowed",
+    per_app_overrides=True,
+    support_tier=None,
+    support_tier_summary=None,
+    default_combo="<ctrl>+<cmd>",
+    default_cleanup_combo="<ctrl>+<shift>+<alt>",
 )
 
 

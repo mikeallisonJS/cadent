@@ -347,3 +347,32 @@ def test_win32_tray_ink_reads_the_taskbars_setting_not_the_apps(monkeypatch):
     ink = desktop.tray_ink()
     assert re.fullmatch(r"#[0-9a-f]{6}", ink), ink
     assert consulted == []
+
+
+def test_the_existing_platforms_carry_the_tier_shaped_facts():
+    from cadent.platform import fallback
+
+    caps_under_test = [fallback.CAPABILITIES]
+    if sys.platform == "win32":
+        caps_under_test.append(win32_caps())
+    for caps in caps_under_test:
+        assert caps.overlay == "windowed"
+        assert caps.per_app_overrides is True
+        assert caps.support_tier is None
+        assert caps.support_tier_summary is None
+        assert caps.default_combo == config.Config().hotkey
+        assert caps.default_cleanup_combo == config.Config().cleanup_hotkey
+
+
+def win32_caps():
+    from cadent.platform import win32
+
+    return win32.CAPABILITIES
+
+
+def test_a_hotkey_tap_accepts_the_chords_to_bind():
+    from cadent.platform import fallback
+
+    tap = fallback.create().hotkey_tap
+    tap.start(lambda *a: None, chords=("<ctrl>+<cmd>",))
+    tap.stop()

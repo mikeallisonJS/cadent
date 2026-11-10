@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
     from ..config import AppOverride
@@ -136,6 +136,23 @@ class Capabilities:
     # Why the theme control appears inert while a contrast setting is on —
     # same reason, two OS vocabularies (contrast theme / increased contrast).
     high_contrast_reason: str
+    # Whether the app can draw a pill, and how: "windowed" is today's
+    # click-through top-level window; None means no overlay exists, so its
+    # construction, the Move-overlay button and the position rows are absent
+    # and failures go to the tray's message (§10.3). "anchored" is reserved.
+    overlay: Literal["windowed", "anchored"] | None
+    # False where the platform cannot tell which app is focused, so a
+    # per-app overrides pane has nothing to key on.
+    per_app_overrides: bool
+    # The support tier the run landed in ("whole" / "portal" / "reduced") and
+    # the sentence that says what it means; None where there are no tiers,
+    # which leaves the General row absent.
+    support_tier: str | None
+    support_tier_summary: str | None
+    # The platform's shipped chords, for the dictation hotkey and the
+    # cleanup-toggle tap.
+    default_combo: str
+    default_cleanup_combo: str
 
 
 class KeyboardOutput(Protocol):
@@ -205,9 +222,11 @@ class FocusedApp(Protocol):
 class HotkeyTap(Protocol):
     """The OS event hook. Feeds raw key events; chord.py stays pure."""
 
-    def start(self, on_event: Callable[[int, bool, bool], None]) -> None:
+    def start(self, on_event: Callable[[int, bool, bool], None],
+              chords: tuple[str, ...] = ()) -> None:
         """Begin listening; on_event(keycode, is_down, injected) is called on
-        the hook's own thread and must stay fast."""
+        the hook's own thread and must stay fast. `chords` are the combos a
+        shortcut-binding platform must register; a global hook ignores them."""
         ...
 
     def stop(self) -> None: ...
