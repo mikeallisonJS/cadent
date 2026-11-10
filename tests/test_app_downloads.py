@@ -615,3 +615,17 @@ def test_the_permission_fault_follows_the_grant_with_no_window_open(
     plat.focused_app.granted = True
     app._poll_permission()
     assert ledger.concerns() == []
+
+
+def test_a_failure_with_no_overlay_goes_to_the_trays_message(app):
+    app.overlay = None
+    app._show_failure("Dictation failed")
+    assert app.tray.messages == ["Cadent"]
+
+
+def test_a_failure_with_an_overlay_stays_on_the_pill(app):
+    shown = []
+    app.overlay = types.SimpleNamespace(show_failure=shown.append)
+    app._show_failure("Dictation failed")
+    assert shown == ["Dictation failed"]
+    assert app.tray.messages == []

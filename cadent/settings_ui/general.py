@@ -123,19 +123,20 @@ class GeneralPane(QWidget):
         self.move_button = QPushButton("Move overlay…")
         self.move_button.clicked.connect(ctx.request_move_overlay)
 
-        layout.addSpacing(int(t["sp_2"]))
-        layout.addWidget(caps("Overlay", t))
-        layout.addWidget(card([
-            # The toggle governs the *activity* states only — failures appear
-            # regardless, so turning off the indicator never turns off the
-            # alarm (§4.8).
-            row(t, "Show overlay while dictating", self.show_overlay,
-                desc="Failures still appear, so a failed dictation is never silent"),
-            row(t, "Snap to guides", self.snap,
-                desc="Soft-snap to the centre and the bottom margin when moving it"),
-            row(t, "Overlay position", self.move_button,
-                desc="Drag a stand-in pill; the real one stays click-through"),
-        ]))
+        if self._caps.overlay == "windowed":
+            layout.addSpacing(int(t["sp_2"]))
+            layout.addWidget(caps("Overlay", t))
+            layout.addWidget(card([
+                # The toggle governs the *activity* states only — failures appear
+                # regardless, so turning off the indicator never turns off the
+                # alarm (§4.8).
+                row(t, "Show overlay while dictating", self.show_overlay,
+                    desc="Failures still appear, so a failed dictation is never silent"),
+                row(t, "Snap to guides", self.snap,
+                    desc="Soft-snap to the centre and the bottom margin when moving it"),
+                row(t, "Overlay position", self.move_button,
+                    desc="Drag a stand-in pill; the real one stays click-through"),
+            ]))
         layout.addStretch()
 
         self.set_high_contrast(high_contrast)
