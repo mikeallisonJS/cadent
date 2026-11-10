@@ -550,7 +550,7 @@ def pin_darwin_ui_platform(monkeypatch, *, granted=True, running=None,
     import dataclasses
 
     from cadent import platform as platform_pkg
-    from cadent.platform.darwin import ACCESSIBILITY_PERMISSION
+    from cadent.platform.base import PermissionPreflight
 
     plat = make_platform(
         focused_app=FakeFocusedApp(name="com.apple.Terminal", granted=granted,
@@ -566,7 +566,19 @@ def pin_darwin_ui_platform(monkeypatch, *, granted=True, running=None,
         gpu_only_engines=frozenset(),
         show_runtime_combo=False,
         gpu_pack_available=False,
-        permission=ACCESSIBILITY_PERMISSION,
+        permission=PermissionPreflight(
+            name="accessibility",
+            banner="Cadent needs the Accessibility permission to type what "
+                   "you dictate. Turn Cadent on under Privacy & Security → "
+                   "Accessibility.",
+            wizard_body="macOS only lets Cadent type into other apps once "
+                        "you grant it Accessibility. In System Settings, turn "
+                        "Cadent on under Privacy & Security → Accessibility, "
+                        "then come back here.",
+            action_label="Open System Settings",
+            waiting="Waiting for the permission — Cadent notices the moment "
+                    "it's granted.",
+            granted="Accessibility is granted — Cadent can type for you."),
         autostart_label="Start at login",
         app_identity_placeholder="com.example.app",
         app_picker=True,
