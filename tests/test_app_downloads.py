@@ -593,3 +593,25 @@ def test_a_hidden_surface_is_told_nothing(app):
 
     assert app.wizard.readings == []
     assert app.wizard.finished == []
+
+
+# ---- the permission poll lives in the app (ADR 0012) ------------------------
+
+
+def test_the_permission_fault_follows_the_grant_with_no_window_open(
+        app, monkeypatch):
+    """Granting Accessibility with no Settings window open must clear the
+    tray fault; revoking it must raise it again."""
+    from conftest import pin_darwin_ui_platform
+
+    from cadent.tray import TrayLedger
+
+    plat = pin_darwin_ui_platform(monkeypatch, granted=False)
+    ledger = TrayLedger()
+    app.platform = plat
+    app.tray = types.SimpleNamespace(set_fault=ledger.set_fault)
+    app._poll_permission()
+    assert ledger.concerns() == ["permission needed"]
+    plat.focused_app.granted = True
+    app._poll_permission()
+    assert ledger.concerns() == []
