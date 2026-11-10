@@ -16,7 +16,7 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from . import a11y, downloads, gpu_pack, hardware, icons, snippets, stt, vocabulary
@@ -182,6 +182,7 @@ class CadentApp:
                                               on_error=self.bridge.llm_failed.emit)
 
         self._setup_tray()
+        self._start_permission_poll()
         self.overlay.set_cleanup(self.config.cleanup_mode)
         self.ptt = self._make_ptt()
 
@@ -863,6 +864,28 @@ class CadentApp:
         self.wizard.download_requested.connect(self._download_model_for_wizard)
         self.wizard.cancel_requested.connect(self._cancel_speech_download)
         self.wizard.show()
+
+    # ---- permission --------------------------------------------------------
+
+    def _start_permission_poll(self) -> None:
+        """Where the platform names a grant, watch for it: the grant lands in
+        System Settings, where no signal of ours can fire. One timer owns the
+        `permission-needed` fault; the banner and wizard page follow it."""
+        if self.platform.capabilities.permission is None:
+            return
+        self._permission_timer = QTimer()
+        self._permission_timer.setInterval(2000)
+        self._permission_timer.timeout.connect(self._poll_permission)
+        self._permission_timer.start()
+        self._poll_permission()
+
+    def _poll_permission(self) -> None:
+        granted = self.platform.focused_app.permission_granted()
+        self.tray.set_fault("permission-needed", not granted)
+        if self.settings_window is not None:
+            self.settings_window.set_permission_missing(not granted)
+        if self.wizard is not None:
+            self.wizard.set_permission_granted(granted)
 
     def _wizard_wants_hotkey(self) -> bool:
         """The try-it step teaches the hotkey and the pill in one motion, so
