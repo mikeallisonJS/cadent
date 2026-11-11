@@ -87,6 +87,9 @@ class OverridesPane(QWidget):
             "How Cadent inserts text into each app. Overrides Cadent "
             "ships, ones it learned, and ones you wrote all look alike here.",
             "RowDesc"))
+        self.paste_note = platform.current().capabilities.paste_note
+        if self.paste_note is not None:
+            layout.addWidget(label(self.paste_note, "RowHint"))
 
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["App", "Strategy", ""])

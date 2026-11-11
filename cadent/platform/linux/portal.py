@@ -127,6 +127,20 @@ def set_selection_message(session: str, mime_types: list[str]) -> Message:
                  (session, {"mime_types": ("as", mime_types)}))
 
 
+def selection_write_message(session: str, serial: int) -> Message:
+    """Answers `SelectionTransfer`: the reply carries the pipe to write to."""
+    return _call(CLIPBOARD, "SelectionWrite", "ou", (session, serial))
+
+
+def selection_write_done_message(session: str, serial: int, success: bool) -> Message:
+    return _call(CLIPBOARD, "SelectionWriteDone", "oub", (session, serial, success))
+
+
+def selection_read_message(session: str, mime_type: str) -> Message:
+    """The reply carries the pipe the current selection is read from."""
+    return _call(CLIPBOARD, "SelectionRead", "os", (session, mime_type))
+
+
 def interface_version_message(interface: str) -> Message:
     """`Properties.Get(interface, "version")` — an error reply means the
     portal backend does not implement the interface."""
@@ -177,7 +191,7 @@ class _CallbackQueue(queue.Queue):
 def _open_router():
     from jeepney.io.threading import DBusRouter, open_dbus_connection
 
-    router = DBusRouter(open_dbus_connection(bus="SESSION"))
+    router = DBusRouter(open_dbus_connection(bus="SESSION", enable_fds=True))
     thread = getattr(router, "_rcv_thread", None)
     if thread is not None:
         thread.name = THREAD_NAME
