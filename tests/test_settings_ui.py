@@ -2002,3 +2002,28 @@ def test_the_overlay_rows_exist_only_where_an_overlay_does(
     assert not shown(pane.move_button) and not shown(pane.snap)
     assert not shown(pane.show_overlay)
     win.close()
+
+
+def test_the_general_pane_shows_the_support_tier_line_only_where_there_is_one(
+        qt_app, paths, monkeypatch):
+    import dataclasses
+
+    from PySide6.QtWidgets import QLabel
+
+    from cadent import platform as platform_pkg
+
+    def general_text(summary):
+        plat = platform_pkg.current()
+        caps = dataclasses.replace(plat.capabilities, support_tier_summary=summary)
+        monkeypatch.setattr(platform_pkg, "_current",
+                            dataclasses.replace(plat, capabilities=caps))
+        win = SettingsWindow(ConfigStore(paths / "config.json"),
+                             tokens=tokens("dark"), devices=[])
+        texts = [w.text() for w in win.general.findChildren(QLabel)]
+        win.close()
+        return texts
+
+    line = ("Wayland session on GNOME — Reduced support: no overlay, no "
+            "per-app overrides.")
+    assert line in general_text(line)
+    assert not any("support:" in t for t in general_text(None))

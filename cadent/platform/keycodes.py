@@ -107,3 +107,35 @@ DARWIN_KEYCODES = KeycodeTable(
     ord_fallback=False,
     sides=_CARBON_SIDES,
 )
+
+
+# X11 keysyms (keysymdef.h) — one namespace for all three Linux tiers, because
+# the portals speak keysyms and the X11 tap reads them back from XRecord, so
+# there is no evdev table to keep in step (ADR 0008). Latin-1 keysyms equal
+# their code points, which is why letters and digits are `ord`; the table
+# still refuses unknown parts (`ord_fallback=False`) because an unlisted key
+# has no keysym to press.
+_KEYSYM_SIDES: dict[str, tuple[int, int]] = {
+    "ctrl": (0xFFE3, 0xFFE4),       # Control_L, Control_R
+    "shift": (0xFFE1, 0xFFE2),      # Shift_L, Shift_R
+    "alt": (0xFFE9, 0xFFEA),        # Alt_L, Alt_R
+    "cmd": (0xFFEB, 0xFFEC),        # Super_L, Super_R
+}
+
+_KEYSYM_GROUPS: dict[str, frozenset[int]] = {
+    f"<{name}>": frozenset(pair) for name, pair in _KEYSYM_SIDES.items()
+}
+_KEYSYM_GROUPS.update(_sided(_KEYSYM_SIDES))
+
+LINUX_KEYCODES = KeycodeTable(
+    groups=_KEYSYM_GROUPS,
+    # Synthetic chords press the left-hand keysym; "win" and "option" are the
+    # spellings hand-edited configs carry across OSes.
+    modifiers={"ctrl": 0xFFE3, "shift": 0xFFE1, "alt": 0xFFE9, "option": 0xFFE9,
+               "cmd": 0xFFEB, "win": 0xFFEB, "super": 0xFFEB},
+    chars={**{c: ord(c) for c in "abcdefghijklmnopqrstuvwxyz0123456789"},
+           "space": 0x20},
+    function_keys={f"f{n}": 0xFFBD + n for n in range(1, 25)},   # F1 = 0xFFBE
+    ord_fallback=False,
+    sides=_KEYSYM_SIDES,
+)

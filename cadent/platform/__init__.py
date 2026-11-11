@@ -41,6 +41,8 @@ def current() -> Platform:
             from . import win32 as impl
         elif sys.platform == "darwin":
             from . import darwin as impl
+        elif sys.platform == "linux":
+            from . import linux as impl
         else:
             from . import fallback as impl
         _current = impl.create()

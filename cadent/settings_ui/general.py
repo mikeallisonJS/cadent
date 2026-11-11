@@ -123,6 +123,13 @@ class GeneralPane(QWidget):
         self.move_button = QPushButton("Move overlay…")
         self.move_button.clicked.connect(ctx.request_move_overlay)
 
+        if self._caps.support_tier_summary:
+            layout.addSpacing(int(t["sp_2"]))
+            layout.addWidget(caps("Session", t))
+            layout.addWidget(card([
+                row(t, "Support", desc=self._caps.support_tier_summary),
+            ]))
+
         if self._caps.overlay == "windowed":
             layout.addSpacing(int(t["sp_2"]))
             layout.addWidget(caps("Overlay", t))

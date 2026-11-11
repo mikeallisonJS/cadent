@@ -29,6 +29,9 @@ def test_current_matches_this_os():
         assert type(plat.clipboard).__module__.endswith("platform.darwin")
         assert type(plat.focused_app).__module__.endswith("platform.darwin")
         assert type(plat.hotkey_tap).__module__.endswith("platform.darwin")
+    elif sys.platform == "linux":
+        assert type(plat.keyboard).__module__.endswith("platform.linux")
+        assert plat.capabilities.support_tier in ("whole", "portal", "reduced")
     else:
         assert type(plat.keyboard).__module__.endswith("platform.fallback")
 
@@ -52,7 +55,7 @@ def test_capabilities_carry_the_injection_column():
         assert caps.default_override_reasons == {}
         assert caps.app_identity_placeholder == "com.example.app"
         assert caps.autostart_label == "Start at login"
-    else:
+    elif sys.platform != "linux":   # linux's columns: test_linux_platform.py
         assert caps.default_injection_strategy == "type"
         assert caps.injection_rungs == ("type", "paste")
         assert caps.paste_chord == "ctrl+v"
