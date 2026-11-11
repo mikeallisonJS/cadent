@@ -17,6 +17,7 @@ from typing import Literal
 from .. import fallback
 from ..base import Capabilities, PermissionPreflight, Platform
 from ..keycodes import LINUX_KEYCODES
+from .desktop_files import DesktopIndex
 from .portal import Portal
 
 Tier = Literal["whole", "portal", "reduced"]
@@ -150,8 +151,21 @@ class LinuxClipboard(_PortalAdapter, fallback.MemoryClipboard):
 
 
 class LinuxFocusedApp(_PortalAdapter, fallback.NullFocusedApp):
+    """Off X11 identity arrives with the Wayland tickets; the installed-apps
+    list is pure XDG lookup, so every tier already has it."""
+
+    def __init__(self, portal: Portal, index: DesktopIndex | None = None) -> None:
+        super().__init__(portal)
+        self._index = index or DesktopIndex()
+
     def name(self) -> str:
         return "unknown"
+
+    def running_apps(self) -> list[tuple[str, str]]:
+        return self._index.installed()
+
+    def display_name(self, identity: str) -> str | None:
+        return self._index.display_name(identity)
 
 
 class LinuxHotkeyTap(_PortalAdapter, fallback.NullHotkeyTap): ...
@@ -165,12 +179,27 @@ def create(env: Mapping[str, str] | None = None,
            portal: Portal | None = None) -> Platform:
     session = detect_session(os.environ if env is None else env)
     portal = portal or Portal()
+    if session.tier == "whole":
+        # Imported here, not at the top: Xlib is only needed — and an X
+        # server only assumed — on the tier that talks to one.
+        from . import x11
+
+        gate = x11.InjectionGate()
+        keyboard = x11.X11Keyboard(gate)
+        clipboard = x11.X11Clipboard()
+        focused_app = x11.X11FocusedApp()
+        hotkey_tap = x11.X11HotkeyTap(gate)
+    else:
+        keyboard = LinuxKeyboard(portal)
+        clipboard = LinuxClipboard(portal)
+        focused_app = LinuxFocusedApp(portal)
+        hotkey_tap = LinuxHotkeyTap(portal)
     return Platform(
         capabilities=capabilities_for(session),
-        keyboard=LinuxKeyboard(portal),
-        clipboard=LinuxClipboard(portal),
-        focused_app=LinuxFocusedApp(portal),
-        hotkey_tap=LinuxHotkeyTap(portal),
+        keyboard=keyboard,
+        clipboard=clipboard,
+        focused_app=focused_app,
+        hotkey_tap=hotkey_tap,
         hardware=LinuxHardware(portal),
         autostart=LinuxAutostart(portal),
         single_instance=LinuxSingleInstance(portal),

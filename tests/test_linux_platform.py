@@ -141,7 +141,7 @@ def test_current_returns_the_linux_platform_on_linux(monkeypatch):
 
 def test_every_seam_adapter_is_handed_the_one_connection():
     portal = Portal(connect=lambda: pytest.fail("startup must not open the bus"))
-    plat = create(X11_KDE, portal=portal)
+    plat = create(WAYLAND_KDE, portal=portal)
     for adapter in (plat.keyboard, plat.clipboard, plat.focused_app,
                     plat.hotkey_tap, plat.hardware, plat.autostart,
                     plat.single_instance, plat.desktop):
