@@ -17,6 +17,7 @@ from typing import Literal
 from .. import fallback
 from ..base import Capabilities, PermissionPreflight, Platform
 from ..keycodes import LINUX_KEYCODES
+from . import desktopfiles
 from .portal import Portal
 
 Tier = Literal["whole", "portal", "reduced"]
@@ -152,6 +153,13 @@ class LinuxClipboard(_PortalAdapter, fallback.MemoryClipboard):
 class LinuxFocusedApp(_PortalAdapter, fallback.NullFocusedApp):
     def name(self) -> str:
         return "unknown"
+
+    def running_apps(self) -> list[tuple[str, str]]:
+        """Installed applications, not running ones (§5.2): `(Name, id)`."""
+        return [(e.name, e.id) for e in desktopfiles.installed_apps()]
+
+    def display_name(self, identity: str) -> str | None:
+        return desktopfiles.display_name(identity)
 
 
 class LinuxHotkeyTap(_PortalAdapter, fallback.NullHotkeyTap): ...

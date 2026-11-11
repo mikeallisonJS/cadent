@@ -2027,3 +2027,29 @@ def test_the_general_pane_shows_the_support_tier_line_only_where_there_is_one(
             "per-app overrides.")
     assert line in general_text(line)
     assert not any("support:" in t for t in general_text(None))
+
+
+def test_reduced_pane_shows_the_note_and_stays_editable(qt_app, paths, monkeypatch):
+    import dataclasses
+
+    from cadent import platform as platform_pkg
+
+    base = platform_pkg.current()
+
+    def window(per_app):
+        caps = dataclasses.replace(base.capabilities, per_app_overrides=per_app)
+        monkeypatch.setattr(platform_pkg, "current",
+                            lambda: dataclasses.replace(base, capabilities=caps))
+        return SettingsWindow(ConfigStore(paths / "config.json"),
+                              tokens=tokens("dark"), devices=[])
+
+    reduced = window(False)
+    assert not reduced.overrides.session_note.isHidden()
+    reduced.overrides.add_combo.setCurrentText("org.mozilla.firefox")
+    reduced.overrides._add()
+    assert any(o.process == "org.mozilla.firefox"
+               for o in reduced.overrides.overrides)
+    reduced.close()
+    whole = window(True)
+    assert whole.overrides.session_note.isHidden()
+    whole.close()
