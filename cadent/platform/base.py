@@ -167,6 +167,17 @@ class Capabilities:
     # cleanup-toggle tap.
     default_combo: str
     default_cleanup_combo: str
+    # Where the desktop, not Cadent, binds the shortcut (Wayland's
+    # GlobalShortcuts portal): a chord must name a key a keysym can stand for,
+    # so a modifier-only one is replaced for the run (never rewritten in
+    # config.json) by the platform default above.
+    chords_need_key: bool = False
+    # False where the platform offers no way to listen globally (stock Sway has
+    # no GlobalShortcuts portal): the hotkey is disarmed and the tray says so.
+    hotkey_available: bool = True
+    # The Hotkeys pane's note where the desktop owns the binding or there is
+    # none; None where Cadent's own recorder is authoritative.
+    hotkey_note: str | None = None
 
 
 class KeyboardOutput(Protocol):
@@ -244,6 +255,12 @@ class HotkeyTap(Protocol):
         ...
 
     def stop(self) -> None: ...
+
+    def bindings(self) -> dict[str, str]:
+        """Where the desktop owns the shortcut: shortcut id ("dictate",
+        "cleanup") → the binding it reports, in its own words. Empty where
+        Cadent's hook is authoritative."""
+        ...
 
 
 class HardwareProbe(Protocol):

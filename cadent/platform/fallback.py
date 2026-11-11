@@ -90,6 +90,9 @@ class NullHotkeyTap:
     def stop(self) -> None:
         pass
 
+    def bindings(self) -> dict[str, str]:
+        return {}
+
 
 class NullHardware:
     def cuda_total_memory(self) -> float | None:
