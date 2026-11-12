@@ -10,9 +10,12 @@
 #
 # Apple silicon only. The runtime stack has no universal2 build to freeze —
 # onnxruntime and ctranslate2 ship arm64 wheels, and llama-cpp-python compiles
-# from source here (docs/research/macos-dev-environment.md §2b) — so macos-14
+# from source here (docs/research/macos-dev-environment.md §2b) — so macos-15
 # is the target, matching the M1 Max the port is benched on and the test
-# workflow's macOS leg.
+# workflow's macOS leg. Pinned by name, and it has to move when GitHub retires
+# the image (macos-14 went on 2026-11-02): a retired label cancels the job
+# rather than failing it, and since the two release legs are independent that
+# would ship a release with no disk image.
 #
 # Signing is optional and secret-gated. With no secrets the build is ad-hoc
 # signed, which is all arm64 needs to *load* the app; the user right-clicks ▸
@@ -40,7 +43,7 @@ permissions:
 
 jobs:
   dmg:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
