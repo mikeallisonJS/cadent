@@ -30,11 +30,19 @@ jobs:
         # `offscreen` there, Segoe UI falls back to something ~1.4x wider
         # and every geometry test measures a font no user has. The macOS
         # runner leg runs `offscreen`, where fonts resolve correctly.
+        #
+        # Python on the macOS leg is pinned because nothing else chooses it:
+        # with no pin uv takes the first interpreter the image offers, and
+        # macos-15 offers 3.15, which ctranslate2 publishes no wheel for. 3.14
+        # is what the macos-14 image gave this leg, and what the disk image is
+        # built with (build-installer-macos.yml) — keep the two in step. A leg
+        # with no `python` key keeps the image's default.
         include:
           - os: windows-latest
             qpa: windows
           - os: macos-15
             qpa: offscreen
+            python: "3.14"
     runs-on: ${{ matrix.os }}
     env:
       QT_QPA_PLATFORM: ${{ matrix.qpa }}
@@ -42,6 +50,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: ${{ matrix.python }}
 
       - name: Install dependencies
         run: uv sync --extra dev
