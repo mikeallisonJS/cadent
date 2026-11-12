@@ -80,10 +80,14 @@ jobs:
         # compiling llama.cpp — a few minutes, and the only way to get the
         # Metal backend scripts/build.py insists on.
         #
-        # --refresh-package makes that compile happen on every run. uv keeps
-        # the wheel it built and does not key it on the deployment target, so
-        # a cached one from before the target was set would be reused as-is.
-        run: uv sync --all-extras --refresh-package llama-cpp-python
+        # Clearing the package from uv's cache first makes that compile happen
+        # on every run. uv keeps the wheel it built and does not key it on the
+        # deployment target, so one built under a different target is reused
+        # as-is — and `--refresh-package` does not help: it re-checks the
+        # sdist, finds it unchanged, and hands back the same wheel.
+        run: |
+          uv cache clean llama-cpp-python
+          uv sync --all-extras
 
       - name: Import signing certificate
         id: signing
