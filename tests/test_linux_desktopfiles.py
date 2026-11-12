@@ -4,7 +4,13 @@ so it runs on every tier with no bus."""
 
 import pytest
 
-from cadent.platform.linux import desktopfiles
+# The lookup itself needs no bus, but importing it runs the Linux package's
+# `__init__`, which imports the portal and so jeepney — a Linux-only
+# dependency. Without this the module fails to collect on Windows and macOS
+# and takes the whole run down with it.
+pytest.importorskip("jeepney")
+
+from cadent.platform.linux import desktopfiles  # noqa: E402
 
 
 def write(root, rel, body):
