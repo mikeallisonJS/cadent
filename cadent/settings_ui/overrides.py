@@ -66,6 +66,9 @@ NOTEPAD_SETTLE_NOTE = ("A cold Notepad can take over 150 ms to process a "
                        "wrong thing.")
 
 
+SESSION_NOTE = "Overrides and auto-learn don't apply in this session."
+
+
 class OverridesPane(QWidget):
     def __init__(self, ctx: PaneContext) -> None:
         super().__init__()
@@ -87,6 +90,12 @@ class OverridesPane(QWidget):
             "How Cadent inserts text into each app. Overrides Cadent "
             "ships, ones it learned, and ones you wrote all look alike here.",
             "RowDesc"))
+        # Reduced still edits the same per-machine rows (a Plasma-X11 session
+        # reads them) — the pane only says they are inert in this one (§5.2).
+        self.session_note = label(SESSION_NOTE, "RowHint")
+        self.session_note.setVisible(
+            not platform.current().capabilities.per_app_overrides)
+        layout.addWidget(self.session_note)
         self.paste_note = platform.current().capabilities.paste_note
         if self.paste_note is not None:
             layout.addWidget(label(self.paste_note, "RowHint"))

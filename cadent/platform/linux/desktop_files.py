@@ -50,13 +50,24 @@ def application_dirs(env: Mapping[str, str]) -> list[Path]:
 
 
 def locales_for(env: Mapping[str, str]) -> tuple[str, ...]:
-    """The `Name[...]` keys to try, most specific first: `de_AT` → `de`."""
-    raw = (env.get("LC_ALL") or env.get("LC_MESSAGES") or env.get("LANG") or "")
-    raw = raw.split(".")[0].split("@")[0]
-    if not raw or raw in ("C", "POSIX"):
+    """The `Name[...]` keys to try, most specific first (Desktop Entry spec):
+    `sr_RS@latin` → `sr_RS@latin`, `sr_RS`, `sr@latin`, `sr`."""
+    raw = next((env[var] for var in ("LC_ALL", "LC_MESSAGES", "LANGUAGE", "LANG")
+                if env.get(var)), "").split(":")[0]
+    base, _, modifier = raw.partition("@")
+    base = base.split(".")[0]
+    if not base or base in ("C", "POSIX"):
         return ()
-    lang = raw.split("_")[0]
-    return (raw, lang) if lang != raw else (raw,)
+    language, _, country = base.partition("_")
+    keys = []
+    if country and modifier:
+        keys.append(f"{language}_{country}@{modifier}")
+    if country:
+        keys.append(f"{language}_{country}")
+    if modifier:
+        keys.append(f"{language}@{modifier}")
+    keys.append(language)
+    return tuple(keys)
 
 
 def parse(text: str) -> dict[str, str]:
@@ -141,13 +152,17 @@ class DesktopIndex:
         return None
 
     def installed(self) -> list[tuple[str, str]]:
+        """Every visible application as `(Name, id)`, sorted by name."""
         locales = locales_for(self._env)
         apps = [(e.name(locales), e.id) for e in self._fresh() if e.listed]
         return sorted(apps, key=lambda a: (a[0].lower(), a[1]))
 
     def display_name(self, identity: str) -> str | None:
+        """The localized `Name=` for an id, case-insensitively, whether or
+        not the app is running or listed in the picker."""
         locales = locales_for(self._env)
+        wanted = identity.lower()
         for entry in self._fresh():
-            if entry.id == identity:
+            if entry.id.lower() == wanted:
                 return entry.name(locales) or None
         return None

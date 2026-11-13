@@ -27,6 +27,12 @@ def desktop(tmp_path, rel, **fields):
     return path
 
 
+@pytest.fixture(autouse=True)
+def no_real_flatpaks(monkeypatch):
+    """The machine's own Flatpak apps are not part of any expectation here."""
+    monkeypatch.setattr(df, "FLATPAK_EXPORTS", ())
+
+
 def index(tmp_path, home=None, **env):
     env = {"XDG_DATA_HOME": str(home or tmp_path), "XDG_DATA_DIRS": str(tmp_path / "sys"),
            "HOME": str(tmp_path / "nohome"), **env}

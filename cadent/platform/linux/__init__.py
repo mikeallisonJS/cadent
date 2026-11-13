@@ -294,6 +294,7 @@ class LinuxFocusedApp(_PortalAdapter, fallback.NullFocusedApp):
         return True if self._grants is None else self._grants.granted()
 
     def running_apps(self) -> list[tuple[str, str]]:
+        """Installed applications, not running ones (§5.2): `(Name, id)`."""
         return self._index.installed()
 
     def display_name(self, identity: str) -> str | None:
