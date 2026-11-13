@@ -5,6 +5,25 @@ and are rendered here by the release PR — see `docs/agents/releases.md`.
 
 <!-- towncrier release notes start -->
 
+## v0.8.0 — 2026-11-13
+
+### Features
+
+- Cadent now starts on Linux. It detects whether the session is X11, Wayland on Plasma and similar desktops, or Wayland on GNOME, and Settings ▸ General says which level of support that session gets. ([#33](https://github.com/mikeallisonJS/cadent/issues/33))
+- Cadent now dictates on X11: hold Ctrl+Super, speak, release, and the text types into the focused app, falling back to pasting where typing fails and remembering which apps need it. Per-app overrides and History identify apps by their desktop-file id. ([#34](https://github.com/mikeallisonJS/cadent/issues/34))
+- Cadent now dictates on KDE Plasma Wayland (and SteamOS desktop mode): the first-run step asks your desktop for the shortcut and typing permissions, and the hotkey you set in your desktop's shortcut settings types the transcript. On a desktop with no global-shortcut support, Cadent says so instead of asking for a permission it cannot use. ([#35](https://github.com/mikeallisonJS/cadent/issues/35))
+- On Wayland, Cadent now pastes into the focused app on KDE, Sway, Hyprland and GNOME, putting your clipboard back afterwards, and types with full unicode and no permission prompt on Sway and Hyprland. Where a session has no way to paste, the App overrides pane says so and Cadent types instead. ([#36](https://github.com/mikeallisonJS/cadent/issues/36))
+- The app overrides pane on Linux now lists your installed apps (including Flatpak ones) by name, shows each app's desktop name in override and history rows even when it's closed, and notes on Reduced-support sessions that overrides don't apply there. ([#37](https://github.com/mikeallisonJS/cadent/issues/37))
+
+### Fixes
+
+- A restart hint in Settings no longer wraps beside the microphone or model list when the window is narrow or the system font is wide: the list shortens its own text first, and the full name stays in its tooltip. ([#linux-restart-hint-wrap](https://github.com/mikeallisonJS/cadent/issues/linux-restart-hint-wrap))
+- The Mac app now says it needs macOS 15 or later. It used to claim macOS 12, but parts of it were already built for macOS 15, so the claim was not one it could keep. ([#macos-minimum-version](https://github.com/mikeallisonJS/cadent/issues/macos-minimum-version))
+- Picking a different speech or cleanup model while the previous one is still loading now switches to the new model, instead of sometimes keeping the old one in memory until Cadent restarts. The tray also no longer keeps a "model failed" warning once a working speech model has loaded. ([#model-swap-race](https://github.com/mikeallisonJS/cadent/issues/model-swap-race))
+- The Accessibility permission is now watched by the app itself, so on a Mac the tray recovers the moment it's granted even with no window open. ([#31](https://github.com/mikeallisonJS/cadent/issues/31))
+- macOS: the push-to-talk hotkey now starts working as soon as the Accessibility permission is granted, instead of staying silent until Cadent was quit and relaunched. ([#60](https://github.com/mikeallisonJS/cadent/issues/60))
+
+
 ## v0.7.0 — 2026-09-26
 
 ### Features
