@@ -1,8 +1,8 @@
 """The darwin hotkey tap (#145, spec §3) — adapter internals, platform-skipped
-per ADR 0005; they run on real Macs (the M1 Max, CI's macos-14 leg).
+per ADR 0005; they run on real Macs (the M1 Max, CI's macOS leg).
 
 The listener tests need more than the OS: an untrusted process's event tap
-hears nothing (`AXIsProcessTrusted()` false — CI's macos-14 leg), and
+hears nothing (`AXIsProcessTrusted()` false — CI's macOS leg), and
 creating a real event tap in a process that has already pumped AppKit
 through the Qt widget tests trips a HIToolbox assertion (SIGTRAP) that kills
 the whole pytest run. So every test that starts the listener sits behind
