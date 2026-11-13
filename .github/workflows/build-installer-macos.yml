@@ -10,9 +10,12 @@
 #
 # Apple silicon only. The runtime stack has no universal2 build to freeze —
 # onnxruntime and ctranslate2 ship arm64 wheels, and llama-cpp-python compiles
-# from source here (docs/research/macos-dev-environment.md §2b) — so macos-14
+# from source here (docs/research/macos-dev-environment.md §2b) — so macos-15
 # is the target, matching the M1 Max the port is benched on and the test
-# workflow's macOS leg.
+# workflow's macOS leg. Pinned by name, and it has to move when GitHub retires
+# the image (macos-14 went on 2026-11-02): a retired label cancels the job
+# rather than failing it, and since the two release legs are independent that
+# would ship a release with no disk image.
 #
 # Signing is optional and secret-gated. With no secrets the build is ad-hoc
 # signed, which is all arm64 needs to *load* the app; the user right-clicks ▸
@@ -40,11 +43,26 @@ permissions:
 
 jobs:
   dmg:
-    runs-on: macos-14
+    runs-on: macos-15
+    env:
+      # The oldest macOS the app claims to run on — keep it equal to
+      # LSMinimumSystemVersion in packaging/cadent.spec. Exported for the whole
+      # job because the llama.cpp build below reads it: unset, a from-source
+      # build targets the machine it is built on, so moving this job to a
+      # newer runner would quietly raise the floor of the cleanup model's
+      # libraries with it.
+      MACOSX_DEPLOYMENT_TARGET: "15.0"
     steps:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v5
+        with:
+          # Pinned because nothing else chooses it: with no pin uv takes the
+          # first interpreter the image offers, and macos-15 offers 3.15, which
+          # ctranslate2 publishes no wheel for. 3.14 is what the macos-14 image
+          # gave this build, and what the test workflow's macOS leg runs — keep
+          # the two in step, so the suite covers the interpreter that ships.
+          python-version: "3.14"
 
       - name: Determine version
         id: version
@@ -61,7 +79,15 @@ jobs:
         # all-extras brings the cleanup extra, and on macOS that means
         # compiling llama.cpp — a few minutes, and the only way to get the
         # Metal backend scripts/build.py insists on.
-        run: uv sync --all-extras
+        #
+        # Clearing the package from uv's cache first makes that compile happen
+        # on every run. uv keeps the wheel it built and does not key it on the
+        # deployment target, so one built under a different target is reused
+        # as-is — and `--refresh-package` does not help: it re-checks the
+        # sdist, finds it unchanged, and hands back the same wheel.
+        run: |
+          uv cache clean llama-cpp-python
+          uv sync --all-extras
 
       - name: Import signing certificate
         id: signing
@@ -128,6 +154,50 @@ jobs:
           # and the one `--deep` gets wrong.
           CADENT_CODESIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
         run: uv run python scripts/build.py --skip-sync
+
+      - name: Report the oldest macOS the bundle can load on
+        run: |
+          # Info.plist only *declares* a minimum; what decides whether the app
+          # loads is the highest `minos` among the binaries inside it, and
+          # those come from three places — the interpreter, the prebuilt
+          # wheels, and the llama.cpp compiled above. This reads all of them
+          # and warns when the bundle needs more than it declares. A warning,
+          # not a failure: the prebuilt binaries' floors are not this build's
+          # to change, only to make visible.
+          floor="$MACOSX_DEPLOYMENT_TARGET"
+          report="$RUNNER_TEMP/minos.tsv"
+          find dist/Cadent.app -type f \( -name '*.dylib' -o -name '*.so' -o -perm +111 \) -print0 |
+            while IFS= read -r -d '' file; do
+              # -arch: a universal wheel's Intel slice has a floor of its own,
+              # and it is not the one this Apple-silicon app loads.
+              minos=$(otool -arch arm64 -l "$file" 2>/dev/null | awk '$1 == "minos" { print $2; exit }')
+              if [ -n "$minos" ]; then
+                printf '%s\t%s\n' "$minos" "${file#dist/Cadent.app/}"
+              fi
+            done | sort -t. -k1,1nr -k2,2nr > "$report"
+
+          if [ ! -s "$report" ]; then
+            echo "::error::found no Mach-O binaries in dist/Cadent.app to read a minimum from"
+            exit 1
+          fi
+
+          echo "Binaries per minimum macOS version:"
+          cut -f1 "$report" | uniq -c
+          echo
+          echo "The llama.cpp libraries built by this job:"
+          grep 'llama_cpp/lib/' "$report" || echo "  (none found)"
+          echo
+          echo "The fifteen highest:"
+          head -15 "$report"
+
+          highest=$(head -1 "$report" | cut -f1)
+          above=$(awk -v h="$highest" -v f="$floor" 'BEGIN {
+            split(h, a, "."); split(f, b, ".")
+            print ((a[1] > b[1]) || (a[1] == b[1] && a[2] + 0 > b[2] + 0)) ? "yes" : "no"
+          }')
+          if [ "$above" = "yes" ]; then
+            echo "::warning::The bundle declares macOS $floor as its minimum but contains binaries that need macOS $highest — see this step's log for which."
+          fi
 
       - name: Verify the signature
         if: steps.signing.outputs.signed == 'true'

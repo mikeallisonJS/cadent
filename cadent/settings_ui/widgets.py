@@ -13,11 +13,12 @@ and asserts none does; the factory is what makes passing it the default.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence, QPalette, QShortcut
+from PySide6.QtCore import QRect, Qt
+from PySide6.QtGui import QFontMetricsF, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -160,6 +161,54 @@ class CappedCombo(QComboBox):
         painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, option)
 
 
+def _one_line_width(widget: QLabel) -> int:
+    """The width `widget` needs to show its text without wrapping."""
+    margins = widget.contentsMargins()
+    text = QFontMetricsF(widget.font()).boundingRect(
+        QRect(0, 0, 1 << 20, 1 << 20), widget.alignment(), widget.text())
+    return (math.ceil(text.width()) + margins.left() + margins.right()
+            + 2 * widget.margin())
+
+
+class _HintRow(QHBoxLayout):
+    """A row whose capped combo gives way before its restart hint wraps.
+
+    A plain `QHBoxLayout` hands the combo its whole cap and the label column
+    whatever is left. In Segoe UI and Helvetica Neue at the default window
+    width that leaves the hint room, but in a wider face — DejaVu Sans, which
+    is what the font stack falls back to on Linux — or a narrower window, it
+    did not, and the hint wrapped. Wrapped down the side of the row it reads
+    as damage; a combo that elides a little more is still recognisable, and
+    keeps the whole name as its tooltip.
+
+    So this lays the row out as usual, then narrows the combo by exactly what
+    the hint is short, and widens it back, never past its cap, once the hint
+    has room to spare. The combo never goes below the minimum the layout
+    already allowed it (the stylesheet's `min-width`), so a pane is no wider
+    than it was; past that floor the hint wraps, as it always did. Where the
+    hint fits beside the full cap — every case the cap was sized for — the
+    combo keeps its cap and the row is laid out exactly as before.
+    """
+
+    def __init__(self, parent: QWidget, hint: QLabel,
+                 combo: CappedCombo) -> None:
+        super().__init__(parent)
+        self._hint = hint
+        self._combo = combo
+
+    def setGeometry(self, rect: QRect) -> None:  # noqa: N802 - Qt override
+        super().setGeometry(rect)
+        combo, index = self._combo, self.indexOf(self._combo)
+        if index < 0:
+            return
+        floor = self.itemAt(index).minimumSize().width()
+        spare = self._hint.width() - _one_line_width(self._hint)
+        width = max(floor, min(combo.sizeHint().width(), combo.width() + spare))
+        if width != combo.maximumWidth():
+            combo.setMaximumWidth(width)
+            super().setGeometry(rect)
+
+
 def row(t: dict, title: str, control: QWidget | None = None, *,
         desc: str = "", hint: str = "") -> QFrame:
     """One setting: title, optional subtitle, optional restart hint, control.
@@ -170,7 +219,11 @@ def row(t: dict, title: str, control: QWidget | None = None, *,
     """
     frame = QFrame()
     frame.setObjectName("Row")
-    layout = QHBoxLayout(frame)
+    hint_label = label(hint, "RowHint") if hint else None
+    if hint_label is not None and isinstance(control, CappedCombo):
+        layout: QHBoxLayout = _HintRow(frame, hint_label, control)
+    else:
+        layout = QHBoxLayout(frame)
     layout.setContentsMargins(int(t["row_pad_h"]), int(t["row_pad_v"]),
                               int(t["row_pad_h"]), int(t["row_pad_v"]))
     left = QVBoxLayout()
@@ -182,8 +235,8 @@ def row(t: dict, title: str, control: QWidget | None = None, *,
     # The restart hint sits *under* the description rather than in a column of
     # its own: given its own column it competes with the description for
     # width, and the description is what wraps.
-    if hint:
-        left.addWidget(label(hint, "RowHint"))
+    if hint_label is not None:
+        left.addWidget(hint_label)
     layout.addLayout(left, 1)
     layout.addSpacing(int(t["sp_3"]))
     if control is not None:

@@ -29,7 +29,7 @@ from pathlib import Path
 
 from .. import config
 from ..inject import utf16_chunks
-from .base import Platform
+from .base import PermissionPreflight, Platform
 from .fallback import CAPABILITIES
 from .keycodes import DARWIN_KEYCODES
 
@@ -138,6 +138,20 @@ ACCESSIBILITY_SETTINGS_URL = (
     "x-apple.systempreferences:com.apple.preference.security"
     "?Privacy_Accessibility")
 
+ACCESSIBILITY_PERMISSION = PermissionPreflight(
+    name="accessibility",
+    banner=("Cadent needs the Accessibility permission to type what you "
+            "dictate. Turn Cadent on under Privacy & Security → "
+            "Accessibility."),
+    wizard_body=("macOS only lets Cadent type into other apps once you grant "
+                 "it Accessibility. In System Settings, turn Cadent on under "
+                 "Privacy & Security → Accessibility, then come back here."),
+    action_label="Open System Settings",
+    waiting=("Waiting for the permission — Cadent notices the moment it's "
+             "granted."),
+    granted="Accessibility is granted — Cadent can type for you.",
+)
+
 
 class DarwinDesktop:
     def open_path(self, path: Path) -> None:
@@ -146,7 +160,7 @@ class DarwinDesktop:
         except Exception:
             pass
 
-    def open_permission_settings(self) -> None:
+    def request_permission(self) -> None:
         try:
             subprocess.Popen(["open", ACCESSIBILITY_SETTINGS_URL])
         except Exception:
@@ -593,7 +607,7 @@ def create() -> Platform:
             gpu_only_engines=frozenset(),
             show_runtime_combo=False,
             gpu_pack_available=False,
-            permission_preflight="accessibility",
+            permission=ACCESSIBILITY_PERMISSION,
             app_identity_placeholder="com.example.app",
             autostart_label="Start at login",
             app_picker=True,

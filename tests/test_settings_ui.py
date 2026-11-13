@@ -1842,7 +1842,7 @@ def test_no_accessibility_banner_when_granted_or_off_darwin(
 def test_the_banner_clears_the_moment_the_grant_lands(qt_app, paths, monkeypatch):
     win, plat = darwin_window(paths, monkeypatch, granted=False)
     plat.focused_app.granted = True
-    win._refresh_permission()
+    win.set_permission_missing(False)
     assert win.permission_banner.isVisibleTo(win) is False
     win.close()
 
