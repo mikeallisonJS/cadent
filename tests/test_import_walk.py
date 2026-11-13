@@ -22,7 +22,9 @@ import cadent
 
 # The per-OS adapter modules: the only legal homes for OS imports. Only the
 # factory (cadent/platform/__init__.py) may import them.
-ADAPTERS = {"cadent.platform.win32", "cadent.platform.darwin"}
+# linux is a subpackage (ADR 0013): everything under it is adapter code.
+ADAPTERS = {"cadent.platform.win32", "cadent.platform.darwin",
+            "cadent.platform.linux"}
 FACTORY = "cadent.platform"
 
 # Top-level distributions that exist on one OS only. `ctypes.windll` is an
@@ -32,24 +34,33 @@ OS_ONLY_MODULES = {
     "AppKit", "Quartz", "Foundation", "Cocoa", "objc",     # macOS (pyobjc)
     "ApplicationServices",                                 # macOS (pyobjc, #144)
     "fcntl",                                               # Unix only
+    "jeepney", "Xlib",                                     # Linux (ADR 0013)
 }
 
 PACKAGE_DIR = Path(cadent.__file__).parent
 
 
-def _walk_error(name):
-    # Without this, walk_packages swallows an ImportError raised while
-    # descending into a subpackage and its submodules silently never get
-    # parametrized — a shrunken walk that still looks green.
-    raise RuntimeError(f"import walk could not descend into {name}")
+def is_adapter(name: str) -> bool:
+    return any(name == a or name.startswith(a + ".") for a in ADAPTERS)
 
 
 def walkable_modules():
+    """Every module outside an adapter, found without importing any package
+    on the way down (`pkgutil.walk_packages` imports each package it
+    descends into, which would import the linux adapter on an OS without
+    jeepney)."""
     yield "cadent"
-    for info in pkgutil.walk_packages([str(PACKAGE_DIR)], prefix="cadent.",
-                                      onerror=_walk_error):
-        if info.name not in ADAPTERS:
-            yield info.name
+
+    def descend(path: Path, prefix: str):
+        for info in pkgutil.iter_modules([str(path)]):
+            name = prefix + info.name
+            if is_adapter(name):
+                continue
+            yield name
+            if info.ispkg:
+                yield from descend(path / info.name, name + ".")
+
+    yield from descend(PACKAGE_DIR, "cadent.")
 
 
 def module_path(name: str) -> Path:
@@ -93,7 +104,7 @@ def violations_in(name: str) -> list[str]:
         top = imported.split(".")[0]
         if top in OS_ONLY_MODULES:
             found.append(f"imports OS-only module {imported!r}")
-        if imported in ADAPTERS and name != FACTORY:
+        if is_adapter(imported) and name != FACTORY:
             found.append(f"imports adapter {imported!r} (only the factory may)")
         if imported == "ctypes.windll":
             found.append("imports ctypes.windll")

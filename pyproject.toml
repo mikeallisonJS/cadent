@@ -40,6 +40,9 @@ dependencies = [
     "pyobjc-framework-Quartz>=10; sys_platform == 'darwin'",
     "pyobjc-framework-ApplicationServices>=10; sys_platform == 'darwin'",
     "pywin32>=306; sys_platform == 'win32'",
+    # The one D-Bus transport on Linux (ADR 0013): pure Python, no native
+    # library, so it adds nothing to the bundle's load-bearing set.
+    "jeepney>=0.9; sys_platform == 'linux'",
     "psutil>=5.9",
     "pyperclip>=1.9",
     "platformdirs>=4.0",
