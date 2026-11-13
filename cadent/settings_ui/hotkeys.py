@@ -6,6 +6,8 @@ from PySide6.QtWidgets import QCheckBox, QComboBox, QSpinBox, QVBoxLayout, QWidg
 
 from .. import a11y, settings
 from .. import platform as platform_pkg
+from ..chord import describe_combo
+from ..hotkey import runnable_combo
 from .chord_recorder import ChordRecorderButton
 from .context import PaneContext
 from .widgets import Notice, card, label, page_title, row
@@ -34,8 +36,15 @@ class HotkeysPane(QWidget):
                 on_recorded=lambda chord: self._commit_chord(field, chord),
                 on_problem=self._show_problem, sided=self.sided.isChecked)
 
-        self.hotkey = recorder("hotkey")
-        self.cleanup_hotkey = recorder("cleanup_hotkey")
+        self.hotkey_note = caps.hotkey_note
+        if self.hotkey_note is None:
+            self.hotkey = recorder("hotkey")
+            self.cleanup_hotkey = recorder("cleanup_hotkey")
+        else:
+            # The desktop owns the binding: say what it reports, not what the
+            # file asks for, and never offer a recorder that cannot hear keys.
+            self.hotkey = self._owned("dictate", "hotkey", caps)
+            self.cleanup_hotkey = self._owned("cleanup", "cleanup_hotkey", caps)
         self.mode = QComboBox()
         self.mode.addItem("Hold to dictate", "hold")
         self.mode.addItem("Tap to start / tap to stop", "toggle")
@@ -56,6 +65,16 @@ class HotkeysPane(QWidget):
         self.notice.setVisible(False)
         layout.addWidget(self.notice)
         layout.addWidget(page_title("Hotkeys"))
+        if self.hotkey_note is not None:
+            layout.addWidget(label(self.hotkey_note, "RowDesc"))
+            changed = [field for field in ("hotkey", "cleanup_hotkey")
+                       if self._run_combo(field, caps) != getattr(ctx.config, field)]
+            if changed and caps.hotkey_available:
+                self.config_note = label(
+                    "Your config.json names a chord a desktop shortcut can't "
+                    "use, so Cadent is asking for its default this session. "
+                    "The file is left as it is.", "RowHint")
+                layout.addWidget(self.config_note)
         win = caps.modifier_captions.get("cmd", "Win")
         layout.addWidget(card([
             row(t, "Dictation hotkey", self.hotkey,
@@ -85,6 +104,19 @@ class HotkeysPane(QWidget):
         self.min_hold.valueChanged.connect(
             lambda value: ctx.set("min_hold_ms", value, coalesce=True))
         self.min_hold.editingFinished.connect(ctx.store.flush)
+
+    def _run_combo(self, field: str, caps) -> str:
+        default = (caps.default_combo if field == "hotkey"
+                   else caps.default_cleanup_combo)
+        return runnable_combo(getattr(self.ctx.config, field), default, caps)
+
+    def _owned(self, shortcut: str, field: str, caps):
+        """A read-only line for a chord the desktop binds."""
+        if not caps.hotkey_available:
+            return label("Off", "RowDesc")
+        reported = platform_pkg.current().hotkey_tap.bindings().get(shortcut)
+        return label(reported or describe_combo(
+            self._run_combo(field, caps), caps.modifier_captions), "RowDesc")
 
     # ---- recording outcomes -------------------------------------------------
 

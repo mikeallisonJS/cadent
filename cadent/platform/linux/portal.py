@@ -127,6 +127,28 @@ def set_selection_message(session: str, mime_types: list[str]) -> Message:
                  (session, {"mime_types": ("as", mime_types)}))
 
 
+def selection_write_message(session: str, serial: int) -> Message:
+    """Answers `SelectionTransfer`: the reply carries the pipe to write to."""
+    return _call(CLIPBOARD, "SelectionWrite", "ou", (session, serial))
+
+
+def selection_write_done_message(session: str, serial: int, success: bool) -> Message:
+    return _call(CLIPBOARD, "SelectionWriteDone", "oub", (session, serial, success))
+
+
+def selection_read_message(session: str, mime_type: str) -> Message:
+    """The reply carries the pipe the current selection is read from."""
+    return _call(CLIPBOARD, "SelectionRead", "os", (session, mime_type))
+
+
+def interface_version_message(interface: str) -> Message:
+    """`Properties.Get(interface, "version")` — an error reply means the
+    portal backend does not implement the interface."""
+    address = DBusAddress(PORTAL_PATH, bus_name=PORTAL_BUS,
+                          interface="org.freedesktop.DBus.Properties")
+    return new_method_call(address, "Get", "ss", (interface, "version"))
+
+
 def read_all_message(namespaces: list[str]) -> Message:
     return _call(SETTINGS, "ReadAll", "as", (namespaces,))
 
@@ -141,6 +163,11 @@ def sender_token(unique_name: str) -> str:
 
 def request_path(unique_name: str, token: str) -> str:
     return f"{REQUEST_PREFIX}/{sender_token(unique_name)}/{token}"
+
+
+def signal_rule(interface: str, member: str, path: str | None = None) -> MatchRule:
+    return MatchRule(type="signal", interface=interface, member=member,
+                     path=path)
 
 
 def response_rule(path: str) -> MatchRule:
@@ -164,7 +191,7 @@ class _CallbackQueue(queue.Queue):
 def _open_router():
     from jeepney.io.threading import DBusRouter, open_dbus_connection
 
-    router = DBusRouter(open_dbus_connection(bus="SESSION"))
+    router = DBusRouter(open_dbus_connection(bus="SESSION", enable_fds=True))
     thread = getattr(router, "_rcv_thread", None)
     if thread is not None:
         thread.name = THREAD_NAME
@@ -236,6 +263,39 @@ class Portal:
             return _unpack_response(replies.get(timeout=timeout))
         except queue.Empty:
             raise PortalError("no Response in time") from None
+
+    def has_interface(self, interface: str) -> bool:
+        """Does the portal implement `interface`? An unreachable bus answers
+        no: a hotkey that cannot be bound is as absent as one never offered."""
+        try:
+            self.call(interface_version_message(interface))
+        except PortalError as exc:
+            log.info("portal interface %s unavailable: %s", interface, exc)
+            return False
+        return True
+
+    def subscribe_signal(self, rule: MatchRule,
+                         callback: Callable[[Message], None]) -> Callable[[], None]:
+        """Call `callback(signal)` on the portal thread for every signal the
+        rule matches, until the returned function is called. A failing
+        callback is logged, never allowed to end the receive loop."""
+        router = self.router()
+
+        def deliver(msg: Message) -> None:
+            try:
+                callback(msg)
+            except Exception:
+                log.exception("portal signal handler failed")
+
+        handle = router.filter(rule, queue=_CallbackQueue(deliver))
+        handle.__enter__()
+        try:
+            router.send_and_get_reply(message_bus.AddMatch(rule),
+                                      timeout=BOUNDED_TIMEOUT)
+        except Exception as exc:
+            handle.__exit__(None, None, None)
+            raise PortalError(f"no reply: {exc!r}") from exc
+        return lambda: handle.__exit__(None, None, None)
 
     # -- consent --------------------------------------------------------
 

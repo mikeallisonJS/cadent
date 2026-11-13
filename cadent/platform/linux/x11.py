@@ -563,3 +563,6 @@ class X11HotkeyTap:
             self._listener.stop()
             self._listener = None
 
+    def bindings(self) -> dict[str, str]:
+        return {}
+

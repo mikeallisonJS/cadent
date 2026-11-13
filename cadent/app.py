@@ -28,7 +28,7 @@ from .cleanup import Cleaner, CleanerLifecycle, hf_repo_for
 from .config_store import ConfigStore
 from .history import History
 from .history_ui import HistoryWindow
-from .hotkey import PushToTalk
+from .hotkey import PushToTalk, runnable_combo
 from .inject import Injector, learn_override
 from .overlay import Overlay
 from .pipeline import DictationReport, Pipeline
@@ -194,6 +194,8 @@ class CadentApp:
 
         self._setup_tray()
         self._start_permission_poll()
+        self.tray.set_fault("hotkey-unavailable",
+                            not self.platform.capabilities.hotkey_available)
         if self.overlay is not None:
             self.overlay.set_cleanup(self.config.cleanup_mode)
         self.ptt = self._make_ptt()
@@ -531,10 +533,14 @@ class CadentApp:
         # against this platform's table (#68). The config key stays
         # `cleanup_hotkey`: renaming it would rewrite a file the user may have
         # hand-edited, to no benefit anyone can see (#113).
-        return PushToTalk(self.config.hotkey, self.config.hotkey_mode,
+        caps = self.platform.capabilities
+        return PushToTalk(runnable_combo(self.config.hotkey, caps.default_combo, caps),
+                          self.config.hotkey_mode,
                           self._on_start, self._on_stop, self._on_discard,
                           self.config.min_hold_ms / 1000,
-                          cleanup_combo=self.config.cleanup_hotkey,
+                          cleanup_combo=runnable_combo(
+                              self.config.cleanup_hotkey,
+                              caps.default_cleanup_combo, caps),
                           on_cleanup_toggle=self.bridge.cleanup_hotkey.emit,
                           platform=self.platform)
 
