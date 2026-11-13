@@ -1978,3 +1978,27 @@ def test_the_picker_relists_running_apps_on_every_visit(qt_app, paths, monkeypat
     # Relisted, not re-appended: the row count follows the running set.
     assert combo.count() == 2
     win.close()
+
+
+def test_the_overlay_rows_exist_only_where_an_overlay_does(
+        qt_app, paths, monkeypatch):
+    import dataclasses
+
+    from cadent import platform as platform_pkg
+
+    def general(overlay):
+        plat = platform_pkg.current()
+        caps = dataclasses.replace(plat.capabilities, overlay=overlay)
+        monkeypatch.setattr(platform_pkg, "_current",
+                            dataclasses.replace(plat, capabilities=caps))
+        win = SettingsWindow(ConfigStore(paths / "config.json"),
+                             tokens=tokens("dark"), devices=[])
+        return win, win.general
+
+    win, pane = general("windowed")
+    assert shown(pane.move_button) and shown(pane.snap)
+    win.close()
+    win, pane = general(None)
+    assert not shown(pane.move_button) and not shown(pane.snap)
+    assert not shown(pane.show_overlay)
+    win.close()

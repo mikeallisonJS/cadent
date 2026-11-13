@@ -116,3 +116,16 @@ def test_the_scan_would_catch_a_real_adapter():
     """The scan proves it has teeth on the one file known to be full of OS
     imports — otherwise a scan that silently matched nothing would pass."""
     assert violations_in("cadent.platform.win32")
+
+
+def test_the_platform_package_never_imports_the_gui_toolkit():
+    """Adapters run off the GUI thread and some will load beside libdbus;
+    Qt belongs to the UI layer alone (spec §1.4)."""
+    found = {}
+    for path in sorted((PACKAGE_DIR / "platform").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        hits = [n for n in imported_names(tree, ["cadent", "platform"])
+                if n.split(".")[0] == "PySide6"]
+        if hits:
+            found[path.name] = hits
+    assert found == {}
