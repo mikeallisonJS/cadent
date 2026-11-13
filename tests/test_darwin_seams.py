@@ -1,5 +1,5 @@
 """The darwin small seams (#147, spec §6) — adapter internals, platform-skipped
-per ADR 0005; they run on real Macs (the M1 Max, CI's macos-14 leg).
+per ADR 0005; they run on real Macs (the M1 Max, CI's macOS leg).
 
 Tests write plists and lock files under tmp_path so they never touch the real
 LaunchAgents directory or the app's data dir.

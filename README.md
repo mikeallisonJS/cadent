@@ -126,7 +126,7 @@ pytest          # unit tests (vocab, config, history — no audio/GPU needed)
 ruff check .    # lint
 ```
 
-The suite runs on both OSes — `windows-latest` and `macos-14` — for every PR
+The suite runs on both OSes — `windows-latest` and `macos-15` — for every PR
 and every push to `main`, which is what keeps an OS-specific import from
 escaping a platform adapter. Adapter-internal tests skip themselves on the OS
 they don't belong to.
