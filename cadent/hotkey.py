@@ -16,10 +16,22 @@ import threading
 import time
 from collections.abc import Callable
 
-from .chord import Action, ChordStateMachine, TapChord
-from .platform import Platform
+from .chord import Action, ChordStateMachine, TapChord, parse_combo
+from .platform import Capabilities, Platform
 
 log = logging.getLogger(__name__)
+
+
+def runnable_combo(combo: str, default: str, caps: Capabilities) -> str:
+    """The chord this run binds. Where the desktop owns the shortcut it needs a
+    key to name, so a modifier-only chord (one written under X11) gives way to
+    the platform's default for the run — the config file is left as it is."""
+    if not caps.chords_need_key:
+        return combo
+    modifiers = set(caps.keycode_table.groups.values())
+    if any(group not in modifiers for group in parse_combo(combo, caps.keycode_table)):
+        return combo
+    return default
 
 
 class PushToTalk:
@@ -36,6 +48,8 @@ class PushToTalk:
 
             platform = platform_pkg.current()
         self._tap = platform.hotkey_tap
+        self._chords = (combo, cleanup_combo) if cleanup_combo and on_cleanup_toggle \
+            else (combo,)
         self._keyboard = platform.keyboard
         self._cmd_keys = platform.capabilities.keycode_table.group_for("<cmd>") or frozenset()
         self._capture: Callable[[int, bool], None] | None = None
@@ -97,7 +111,7 @@ class PushToTalk:
         self._running = True
         self._worker = threading.Thread(target=self._run_worker, daemon=True)
         self._worker.start()
-        self._tap.start(self._on_key_event)
+        self._tap.start(self._on_key_event, chords=self._chords)
 
     def stop(self) -> None:
         if not self._running:

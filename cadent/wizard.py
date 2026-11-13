@@ -43,6 +43,7 @@ from .chord import describe_combo
 from .config import MODELS_DIR
 from .config_store import ConfigStore
 from .downloads import Progress
+from .hotkey import runnable_combo
 from .overlay import Meter
 from .settings_ui.model_picker import fill_speech_models, model_combo
 from .settings_ui.widgets import CappedCombo, card, label, row
@@ -612,7 +613,7 @@ class SetupWizard(QDialog):
 
     def _build_hotkey(self) -> QWidget | None:
         self._add(label(
-            f"Hold {describe_combo(self.store.config.hotkey)}, say something, "
+            f"Hold {describe_combo(self._hotkey_combo(), self._captions())}, say something, "
             "then let go. Cadent types it wherever your cursor is.",
             "RowDesc"))
         # The pill is always-on-top and this window is not, so the try-it page
@@ -624,6 +625,13 @@ class SetupWizard(QDialog):
         self._add(self.change_hotkey)
         self.body_layout.addSpacing(int(self._t["pill_margin_bottom"]) + 60)
         return self.change_hotkey
+
+    def _hotkey_combo(self) -> str:
+        caps = platform.current().capabilities
+        return runnable_combo(self.store.config.hotkey, caps.default_combo, caps)
+
+    def _captions(self):
+        return platform.current().capabilities.modifier_captions
 
     def _build_done(self) -> QWidget | None:
         if self.state.model_downloaded:
@@ -641,10 +649,13 @@ class SetupWizard(QDialog):
         device = self.store.config.input_device or "System default"
         self._add(label(
             f"Microphone: {device}\nSpeech model: {model}\n"
-            f"Hotkey: hold {describe_combo(self.store.config.hotkey)} "
+            f"Hotkey: hold {describe_combo(self._hotkey_combo(), self._captions())} "
             "and speak.", "RowDesc"))
         if not self.state.model_downloaded:
             self._add(label(NO_MODEL_YET, "RowHint"))
+        caps = platform.current().capabilities
+        if caps.support_tier in ("portal", "reduced") and caps.support_tier_summary:
+            self._add(label(caps.support_tier_summary, "RowHint"))
         self.body_layout.addStretch()
         return None
 
