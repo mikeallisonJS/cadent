@@ -610,6 +610,10 @@ def test_the_permission_fault_follows_the_grant_with_no_window_open(
     ledger = TrayLedger()
     app.platform = plat
     app.tray = types.SimpleNamespace(set_fault=ledger.set_fault)
+    # The grant landing also rebuilds the hotkey listener (#60); that is
+    # test_app_permission's subject, so here it only has to exist.
+    app.ptt = types.SimpleNamespace(stop=lambda: None, start=lambda: None)
+    app._make_ptt = lambda: app.ptt
     app._poll_permission()
     assert ledger.concerns() == ["permission needed"]
     plat.focused_app.granted = True

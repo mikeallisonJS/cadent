@@ -74,6 +74,11 @@ class _Bridge(QObject):
 
 
 class CadentApp:
+    # The last reading `_poll_permission` took of the platform's grant; None
+    # until it has taken one. On the class so the poll can compare against it
+    # before `__init__` has run past the point that starts the poll.
+    _permission_granted: bool | None = None
+
     def __init__(self, platform: platform_pkg.Platform | None = None) -> None:
         # The one DI point (ADR 0005): everything below that needs an OS
         # primitive or fact is handed this object or a piece of it.
@@ -185,10 +190,6 @@ class CadentApp:
         self._start_permission_poll()
         self.overlay.set_cleanup(self.config.cleanup_mode)
         self.ptt = self._make_ptt()
-        self._permission_timer = QTimer(self.bridge)
-        self._permission_timer.setInterval(2000)
-        self._permission_timer.timeout.connect(self._poll_permission)
-        self._watch_permission()
 
         if self._needs_setup():
             # Dictation is disabled until setup finishes, and the tray carries
@@ -534,23 +535,6 @@ class CadentApp:
         self.ptt.stop()
         self.ptt = self._make_ptt()
         self.ptt.start()
-
-    def _watch_permission(self) -> None:
-        """A listener started without the `permission_preflight` grant is deaf
-        and stays deaf after the grant lands — only one built afterwards hears
-        anything. The wizard and Settings poll the grant too, but only while
-        they are on screen, so the app keeps its own watch for the flip."""
-        if self.platform.capabilities.permission_preflight and \
-                not self.platform.focused_app.permission_granted():
-            self._permission_timer.start()
-
-    def _poll_permission(self) -> None:
-        # Health is the grant, never the listener's `running` flag (ADR 0002).
-        if not self.platform.focused_app.permission_granted():
-            return
-        self._permission_timer.stop()
-        log.info("permission granted; restarting the hotkey listener")
-        self._restart_ptt()
 
     # ---- cleanup / LLM lifecycle -----------------------------------------
 
@@ -912,6 +896,16 @@ class CadentApp:
             self.settings_window.set_permission_missing(not granted)
         if self.wizard is not None:
             self.wizard.set_permission_granted(granted)
+        # A listener started without the grant is deaf and stays deaf after
+        # the grant lands — only one built afterwards hears anything (#60).
+        # So the flip from missing to granted rebuilds it, and only the flip:
+        # the first reading has nothing to compare against, and by then the
+        # listener has not been built yet anyway. Health is the grant, never
+        # the listener's `running` flag (ADR 0002).
+        if granted and self._permission_granted is False:
+            log.info("permission granted; restarting the hotkey listener")
+            self._restart_ptt()
+        self._permission_granted = granted
 
     def _wizard_wants_hotkey(self) -> bool:
         """The try-it step teaches the hotkey and the pill in one motion, so
