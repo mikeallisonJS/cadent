@@ -182,7 +182,7 @@ uv run ruff check .   # lint — line-length 100, see [tool.ruff] in pyproject.t
 
 Target a single file when appropriate: `uv run pytest tests/test_config.py`.
 
-**Platform seam.** Per-OS behaviour lives behind `cadent/platform/` (ADR 0005), and CI runs the suite on `windows-latest` *and* `macos-14`. A fix that reaches for `sys.platform` outside an adapter, or that hardcodes copy naming a Windows-only setting, will pass locally and fail the other leg — put the fact in `Capabilities` instead. Adapter-internal tests platform-skip themselves, so a green local run on one OS is not proof.
+**Platform seam.** Per-OS behaviour lives behind `cadent/platform/` (ADR 0005), and CI runs the suite on `windows-latest` *and* `macos-15`. A fix that reaches for `sys.platform` outside an adapter, or that hardcodes copy naming a Windows-only setting, will pass locally and fail the other leg — put the fact in `Capabilities` instead. Adapter-internal tests platform-skip themselves, so a green local run on one OS is not proof.
 
 **Changelog fragment.** Any change touching `cadent/`, `packaging/`, `scripts/`, or `pyproject.toml` needs a `changelog.d/<issue>.<type>.md` file or the `changelog-check` job hard-fails. If the fix round adds code changes to a PR that already has a fragment, amend that fragment rather than adding a second. See `docs/agents/releases.md`.
 
