@@ -1,6 +1,6 @@
 """The darwin injection seams (#144, spec §2/§5.1) — adapter internals,
 platform-skipped per ADR 0005; they run on real Macs (the M1 Max, CI's
-macos-14 leg).
+macOS leg).
 
 Tests that post real keyboard events are additionally gated behind
 CADENT_REAL_INPUT_TESTS=1: on an Accessibility-trusted machine they type
