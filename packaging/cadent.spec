@@ -42,8 +42,13 @@ INFO_PLIST = {
     # neither the paste target nor the override key can end up being Cadent
     # itself.
     "LSUIElement": True,
-    # PySide6 6.8's floor, and above every pyobjc/onnxruntime arm64 wheel's.
-    "LSMinimumSystemVersion": "12.0",
+    # Measured, not read off a wheel tag: the highest `minos` among the
+    # binaries in the bundle, which build-installer-macos.yml reports on every
+    # build and warns about if it climbs past this. Two things put it at 15 —
+    # the PySide6 6.11 bindings, whatever their `macosx_13_0` wheel tag says,
+    # and the Homebrew Python on the macos-15 runner. Keep it equal to
+    # MACOSX_DEPLOYMENT_TARGET in that workflow.
+    "LSMinimumSystemVersion": "15.0",
     "NSHighResolutionCapable": True,
     # Load-bearing, not boilerplate: a hardened-runtime app that touches the
     # mic with no usage string is killed by the OS rather than prompted for.
