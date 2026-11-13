@@ -30,7 +30,8 @@ def test_current_matches_this_os():
         assert type(plat.focused_app).__module__.endswith("platform.darwin")
         assert type(plat.hotkey_tap).__module__.endswith("platform.darwin")
     elif sys.platform == "linux":
-        assert type(plat.keyboard).__module__.endswith("platform.linux")
+        # The package or one of its tier modules (`platform.linux.x11`).
+        assert ".platform.linux" in type(plat.keyboard).__module__
         assert plat.capabilities.support_tier in ("whole", "portal", "reduced")
     else:
         assert type(plat.keyboard).__module__.endswith("platform.fallback")

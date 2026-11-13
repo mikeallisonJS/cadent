@@ -139,12 +139,29 @@ def test_current_returns_the_linux_platform_on_linux(monkeypatch):
     assert platform_pkg.current().capabilities.support_tier == "reduced"
 
 
-def test_every_seam_adapter_is_handed_the_one_connection():
-    portal = Portal(connect=lambda: pytest.fail("startup must not open the bus"))
-    plat = create(X11_KDE, portal=portal)
+def test_every_wayland_seam_adapter_is_handed_the_one_connection():
+    class Probed(Portal):
+        """Answers the one startup probe (spec §1.3) without a bus."""
+
+        def has_interface(self, interface: str) -> bool:
+            return True
+
+    portal = Probed(connect=lambda: pytest.fail("only the probe may ask the bus"))
+    plat = create(WAYLAND_KDE, portal=portal, windows=lambda: None,
+                  connect=lambda environ: None)
     for adapter in (plat.keyboard, plat.clipboard, plat.focused_app,
                     plat.hotkey_tap, plat.hardware, plat.autostart,
                     plat.single_instance, plat.desktop):
+        assert adapter._portal is portal
+
+
+def test_the_whole_tier_starts_without_opening_the_bus():
+    """X11 talks to the server for input, so only the seams that still go
+    through the portal hold the connection — and none of them opens it."""
+    portal = Portal(connect=lambda: pytest.fail("startup must not open the bus"))
+    plat = create(X11_KDE, portal=portal)
+    for adapter in (plat.hardware, plat.autostart, plat.single_instance,
+                    plat.desktop):
         assert adapter._portal is portal
 
 

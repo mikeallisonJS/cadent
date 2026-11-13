@@ -19,6 +19,7 @@ from .. import fallback
 from ..base import Capabilities, PermissionPreflight, Platform
 from ..keycodes import LINUX_KEYCODES
 from . import datacontrol, vkeyboard, wayland, wlclient
+from .desktop_files import DesktopIndex
 from .input import (
     CLEANUP,
     DICTATE,
@@ -275,19 +276,28 @@ class LinuxClipboard(_PortalAdapter, fallback.MemoryClipboard):
 
 class LinuxFocusedApp(_PortalAdapter, fallback.NullFocusedApp):
     """Identity is the compositor's app_id where it offers a toplevel
-    protocol; otherwise `"unknown"`. The grant is the portal's (spec §2.3)."""
+    protocol; otherwise `"unknown"`. The grant is the portal's (spec §2.3).
+    The installed-apps list is pure XDG lookup, so every tier has it."""
 
     def __init__(self, portal: Portal, grants: PortalInput | None = None,
-                 windows: wayland.PlasmaWindows | None = None) -> None:
+                 windows: wayland.PlasmaWindows | None = None,
+                 index: DesktopIndex | None = None) -> None:
         super().__init__(portal)
         self._grants = grants
         self._windows = windows
+        self._index = index or DesktopIndex()
 
     def name(self) -> str:
         return (self._windows.focused_app_id if self._windows else None) or "unknown"
 
     def permission_granted(self) -> bool:
         return True if self._grants is None else self._grants.granted()
+
+    def running_apps(self) -> list[tuple[str, str]]:
+        return self._index.installed()
+
+    def display_name(self, identity: str) -> str | None:
+        return self._index.display_name(identity)
 
 
 class LinuxHotkeyTap(_PortalAdapter, fallback.NullHotkeyTap):
@@ -344,7 +354,22 @@ def create(env: Mapping[str, str] | None = None,
     session = detect_session(environ)
     portal = portal or Portal()
     if session.tier == "whole":
-        return _assemble(capabilities_for(session), portal)
+        # Imported here, not at the top: Xlib is only needed — and an X
+        # server only assumed — on the tier that talks to one.
+        from . import x11
+
+        gate = x11.InjectionGate()
+        return Platform(
+            capabilities=capabilities_for(session),
+            keyboard=x11.X11Keyboard(gate),
+            clipboard=x11.X11Clipboard(),
+            focused_app=x11.X11FocusedApp(),
+            hotkey_tap=x11.X11HotkeyTap(gate),
+            hardware=LinuxHardware(portal),
+            autostart=LinuxAutostart(portal),
+            single_instance=LinuxSingleInstance(portal),
+            desktop=LinuxDesktop(portal),
+        )
     # The Wayland tiers probe the compositor and the portals once; the answers
     # fix the run.
     hotkey_available = portal.has_interface(GLOBAL_SHORTCUTS)
