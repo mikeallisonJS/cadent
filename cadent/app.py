@@ -74,6 +74,11 @@ class _Bridge(QObject):
 
 
 class CadentApp:
+    # The last reading `_poll_permission` took of the platform's grant; None
+    # until it has taken one. On the class so the poll can compare against it
+    # before `__init__` has run past the point that starts the poll.
+    _permission_granted: bool | None = None
+
     def __init__(self, platform: platform_pkg.Platform | None = None) -> None:
         # The one DI point (ADR 0005): everything below that needs an OS
         # primitive or fact is handed this object or a piece of it.
@@ -526,6 +531,11 @@ class CadentApp:
                           on_cleanup_toggle=self.bridge.cleanup_hotkey.emit,
                           platform=self.platform)
 
+    def _restart_ptt(self) -> None:
+        self.ptt.stop()
+        self.ptt = self._make_ptt()
+        self.ptt.start()
+
     # ---- cleanup / LLM lifecycle -----------------------------------------
 
     def _ensure_llm_model(self) -> None:
@@ -886,6 +896,16 @@ class CadentApp:
             self.settings_window.set_permission_missing(not granted)
         if self.wizard is not None:
             self.wizard.set_permission_granted(granted)
+        # A listener started without the grant is deaf and stays deaf after
+        # the grant lands — only one built afterwards hears anything (#60).
+        # So the flip from missing to granted rebuilds it, and only the flip:
+        # the first reading has nothing to compare against, and by then the
+        # listener has not been built yet anyway. Health is the grant, never
+        # the listener's `running` flag (ADR 0002).
+        if granted and self._permission_granted is False:
+            log.info("permission granted; restarting the hotkey listener")
+            self._restart_ptt()
+        self._permission_granted = granted
 
     def _wizard_wants_hotkey(self) -> bool:
         """The try-it step teaches the hotkey and the pill in one motion, so
@@ -1052,9 +1072,7 @@ class CadentApp:
             # is the whole restart.
             self.recorder.device = self.config.input_device
         elif engine == "hotkeys":
-            self.ptt.stop()
-            self.ptt = self._make_ptt()
-            self.ptt.start()
+            self._restart_ptt()
         elif engine == "stt":
             # Detach first so dictations report not-ready instead of using the
             # old model (same pattern as the #38 crash recovery). Reported
