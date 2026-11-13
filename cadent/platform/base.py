@@ -13,12 +13,26 @@ switched on may then ask the adapters live questions the table cannot hold
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from ..config import AppOverride
+
+
+@dataclass(frozen=True)
+class PermissionPreflight:
+    """The one OS grant Cadent needs, and the words each surface renders for
+    it (ADR 0012). A platform fact: cross-platform UI carries no permission
+    copy of its own."""
+
+    name: str           # "accessibility" on darwin
+    banner: str         # the persistent Settings banner
+    wizard_body: str    # the wizard page's explanation
+    action_label: str   # the button that calls `request_permission()`
+    waiting: str        # the wizard status line while the grant is missing
+    granted: str        # ... and once it lands
 
 
 @dataclass(frozen=True)
@@ -38,6 +52,10 @@ class KeycodeTable:
     # accepts *any* single character through ord(); keep that contract where it
     # was true rather than silently narrowing what a hand-edited config may say.
     ord_fallback: bool = False
+    # "ctrl" → (left keycode, right keycode), in the order a written chord
+    # lists its modifiers. The sided groups (`<rctrl>`, #64) are generated
+    # from this, and it is what lets a physical key be named back (#63).
+    sides: Mapping[str, tuple[int, int]] = field(default_factory=dict)
 
     def group_for(self, part: str) -> frozenset[int] | None:
         """The keycode group a combo part names, or None if unrecognized."""
@@ -49,6 +67,31 @@ class KeycodeTable:
             return frozenset({self.function_keys[part]})
         if self.ord_fallback and len(part) == 1:
             return frozenset({ord(part.upper())})
+        return None
+
+    def part_for(self, keycode: int, sided: bool = False) -> str | None:
+        """The combo part a physical key writes — `group_for`'s inverse, for
+        the chord recorder (#63). A modifier writes its either-side name
+        unless `sided`, when it writes the side that was pressed. None for a
+        key no chord can name (the recorder refuses it rather than guessing
+        through `ord`, which is only ever right for A-Z and 0-9)."""
+        for name, (left, right) in self.sides.items():
+            if keycode in (left, right):
+                if sided:
+                    return f"<{'l' if keycode == left else 'r'}{name}>"
+                return f"<{name}>"
+        for table in (self.chars, self.function_keys):
+            for name, code in table.items():
+                if code == keycode:
+                    return name
+        return None
+
+    def modifier_rank(self, part: str) -> int | None:
+        """Where a modifier part sorts in a written chord, or None for a key.
+        `<ctrl>`, `<lctrl>` and `<rctrl>` share a slot."""
+        for rank, name in enumerate(self.sides):
+            if part in (f"<{name}>", f"<l{name}>", f"<r{name}>"):
+                return rank
         return None
 
 
@@ -75,7 +118,7 @@ class Capabilities:
     gpu_only_engines: frozenset[str]
     show_runtime_combo: bool
     gpu_pack_available: bool                 # wizard page + tray items exist at all
-    permission_preflight: str | None         # None, or "accessibility" on darwin
+    permission: PermissionPreflight | None   # None, or the one grant (darwin: Accessibility)
     autostart_label: str
     app_identity_placeholder: str            # "app.exe" / "com.example.app"
     app_picker: bool                         # running-apps picker vs free text only
@@ -156,7 +199,7 @@ class FocusedApp(Protocol):
         ...
 
     def permission_granted(self) -> bool:
-        """Is `Capabilities.permission_preflight`'s grant present? True where
+        """Is `Capabilities.permission`'s grant present? True where
         there is no preflight, and on a *failed* probe — a broken check must
         nag nobody."""
         ...
@@ -220,9 +263,10 @@ class DesktopEnv(Protocol):
         """Open a file in the user's associated app; never blocks, never raises."""
         ...
 
-    def open_permission_settings(self) -> None:
-        """Deep-link to where `permission_preflight`'s grant is given (System
-        Settings ▸ Accessibility on darwin); a no-op where there is none."""
+    def request_permission(self) -> None:
+        """Start the flow that asks for `Capabilities.permission`'s grant
+        (a deep link to System Settings ▸ Accessibility on darwin); a no-op
+        where there is none. Fire-and-forget: never blocks, never raises."""
         ...
 
     def text_scale_factor(self) -> float: ...

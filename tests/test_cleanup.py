@@ -4,6 +4,7 @@ Charter safety contract: cleanup must never block or break dictation — while
 the LLM is not loaded, clean() silently returns the raw transcript.
 """
 
+import sys
 import time
 
 import pytest
@@ -386,6 +387,61 @@ def test_lifecycle_toggle_off_during_load_ends_unloaded(fake_llama, model_file):
                             prepare=lambda: life.set_wanted(False))
     life.set_wanted(True)
     assert not life.cleaner.ready
+
+
+def test_lifecycle_a_model_picked_mid_load_replaces_the_one_loading(
+        fake_llama, model_file, tmp_path, monkeypatch):
+    """Settings reassigns `model_path` from the UI thread while the reconcile
+    thread is partway through loading the old one. That load used to land
+    after the swap and count as ready, leaving the old model resident — with
+    the new model's prompt — until the app restarted."""
+    second = tmp_path / "second.gguf"
+    second.write_bytes(b"gguf")
+    cleaner = Cleaner(str(model_file))
+    life = CleanerLifecycle(cleaner, spawn=sync_spawn)
+
+    class RepickedMidLoad(fake_llama):
+        def __init__(self, model_path, **kwargs):
+            super().__init__(model_path, **kwargs)
+            cleaner.model_path = str(second)
+
+    monkeypatch.setattr(sys.modules["llama_cpp"], "Llama", RepickedMidLoad)
+    life.set_wanted(True)
+    life.set_wanted(True)                       # what Settings sends after the pick
+
+    assert [i.model_path for i in fake_llama.instances] == [str(model_file), str(second)]
+    assert cleaner.ready
+    cleaner.clean("one two three")
+    assert len(fake_llama.instances[0].calls) == 1   # its warm-up, nothing after
+
+
+def test_a_model_the_config_moved_off_is_not_used_for_cleanup(fake_llama, model_file):
+    c = Cleaner(str(model_file))
+    c.load()
+    c.model_path = "elsewhere.gguf"
+    assert c.clean("um so the thing") == "um so the thing"
+    assert not c.ready
+
+
+def test_lifecycle_turning_cleanup_off_unloads_a_superseded_model(fake_llama, model_file):
+    """Not ready (it is the wrong model) and not wanted is not settled: it is
+    still resident."""
+    c = Cleaner(str(model_file))
+    life = CleanerLifecycle(c, spawn=sync_spawn)
+    life.set_wanted(True)
+    c.model_path = "elsewhere.gguf"
+    life.set_wanted(False)
+    assert not c.resident
+
+
+def test_lifecycle_a_new_token_budget_does_not_reload(fake_llama, model_file):
+    """`max_tokens` is read per generation, so the model can stay put."""
+    c = Cleaner(str(model_file))
+    life = CleanerLifecycle(c, spawn=sync_spawn)
+    life.set_wanted(True)
+    c.max_tokens = 256
+    life.set_wanted(True)
+    assert len(fake_llama.instances) == 1
 
 
 def test_lifecycle_load_failure_reports_and_resets(fake_llama, tmp_path):

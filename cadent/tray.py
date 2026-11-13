@@ -33,6 +33,7 @@ FAULTS: dict[str, str] = {
     "cleanup-failed": "cleanup unavailable",
     "engine-on-cpu": "speech engine rebuilding on CPU",
     "config-unreadable": "config.json couldn't be read",
+    "permission-needed": "permission needed",
 }
 
 # Offers clear when they are *seen*. Without that split an NVIDIA user who

@@ -5,6 +5,18 @@ and are rendered here by the release PR — see `docs/agents/releases.md`.
 
 <!-- towncrier release notes start -->
 
+## v0.7.0 — 2026-09-26
+
+### Features
+
+- Hotkeys are recorded, not typed: in Settings ▸ Hotkeys, click the chord, press the keys you want, and let go. Nobody has to know that Ctrl+Win is spelled `<ctrl>+<cmd>` any more. A switch records the side you press (Right Ctrl rather than either Ctrl), and keys that cannot be a hotkey, such as a letter on its own, are explained inline rather than accepted. ([#63](https://github.com/mikeallisonJS/cadent/issues/63))
+- A hotkey can name one side of a modifier: `<rctrl>` or `<rcmd>` alone makes a push-to-talk key that collides with nothing, and `<lshift>`, `<ralt>` and the rest work the same way on Windows and macOS (`<ctrl_r>`-style spellings are accepted too). Plain `<ctrl>` still means either side. ([#64](https://github.com/mikeallisonJS/cadent/issues/64))
+
+### Fixes
+
+- Cadent starts even when the hotkey in config.json is one it cannot read. Previously a hand-edited chord the app did not recognise (a `<ctrl_r>`, say) crashed it on launch with an exception dialog; now it falls back to the default chord and Settings ▸ Hotkeys says what the file asked for and what is in use instead. ([#68](https://github.com/mikeallisonJS/cadent/issues/68))
+
+
 ## v0.6.0 — 2026-09-11
 
 ### Features

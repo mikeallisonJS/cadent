@@ -15,7 +15,7 @@ Cadent runs on x86_64 Linux with the core loop intact — hotkey → record → 
 
 **Not in scope** (map #11's Out-of-scope list): non-x86_64 Linux; SteamOS **gaming mode** (Gamescope has no portal backend and no tray — no tier exists there); a layer-shell overlay on Plasma/SteamOS Wayland (compiled `cadent-overlay` helper — a follow-on; `Capabilities.overlay = "anchored"` is reserved for it); the Parakeet CUDA pack edition on Windows; a Flatpak (deferred until portal-backed input adapters exist — ADR 0011); raw evdev/uinput capture (a named non-goal for v1, never a silent fallback — ADR 0008); running the Wayland tiers under XWayland (`QT_QPA_PLATFORM=xcb`) to recover anything.
 
-Ground truth while implementing: `CONTEXT.md` (glossary: *Support tier*, *Permission preflight*, *GPU support pack*, *App picker* carry the Linux wording), ADR 0005 (the seam), `cadent/platform/{base,win32,darwin,fallback}.py`, `scripts/build.py` (`LOAD_BEARING`).
+Ground truth while implementing: `GLOSSARY.md` (glossary: *Support tier*, *Permission preflight*, *GPU support pack*, *App picker* carry the Linux wording), ADR 0005 (the seam), `cadent/platform/{base,win32,darwin,fallback}.py`, `scripts/build.py` (`LOAD_BEARING`).
 
 ---
 

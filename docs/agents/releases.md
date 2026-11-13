@@ -97,13 +97,66 @@ What that path requires, and where each requirement is kept honest:
 | Installer **and every PE file inside it** chain to a Microsoft-trusted root | `scripts/sign_windows.py`, both passes |
 | Installs with no UI (UAC is allowed; we never even prompt) | `PrivilegesRequired=lowest`, exercised by the `/VERYSILENT` step in `build-installer.yml` |
 | Standalone installer — no downloading during setup | the onedir payload is embedded; model downloads are first-run app behaviour, not setup |
-| Versioned download URL whose binary never changes | the `vX.Y.Z` GitHub Release asset, which `tag-release.yml` publishes once |
+| Versioned download URL whose binary never changes, **serving it with no redirect** | `https://downloads.mikeallisonjs.com/cadent/vX.Y.Z/Cadent-Setup-X.Y.Z.exe`, published to Cloudflare R2 by `build-installer.yml` on tag |
 
-Submitting a release is therefore: ship the tag as usual, wait for
-`build-installer.yml` to attach the signed installer, then point the Partner
-Center submission at that release's asset URL. A new version means a new
-submission with a new URL — never repointing an old one, which the Store
-forbids.
+**The GitHub Release asset URL cannot be submitted**, which is worth stating
+plainly because it looks like it should be. Release assets answer `302` and
+redirect to a `release-assets.githubusercontent.com` link that is signed and
+expires within the hour, and Partner Center rejects both the redirect and,
+obviously, a URL that dies the same afternoon. GitHub Pages is not an
+alternative either — its 100 MB file limit is under the installer's size.
+
+So a tag build publishes the same signed installer twice: to the GitHub
+Release, for everyone downloading it directly, and to a Cloudflare R2 bucket
+behind `downloads.mikeallisonjs.com`, which is what a submission points at.
+The R2 step verifies the public URL answers `200` rather than a redirect
+before the build goes green, so a broken submission URL fails the release
+instead of failing certification. It only runs for a signed installer — R2
+secrets without signing secrets fail the tagged build rather than publish
+something the Store would reject — and the upload is a conditional write, so
+rerunning a tag whose package is already in the bucket fails instead of
+replacing bytes behind a URL that may already be in a submission. Different
+bytes mean a new version.
+
+That host must stay a custom domain. R2's built-in `pub-<hash>.r2.dev` address
+is rate-limited, returns `429` under load, and Cloudflare says outright it is
+not for production — and because Partner Center makes the developer
+responsible for maintaining the URL rather than mirroring the binary, it very
+likely serves every Store install and not just the one certification fetch.
+
+Submitting a release is therefore part of shipping the tag. Once
+`build-installer.yml` has signed, published and verified, its `store` job
+calls `store-submit.yml`, which runs `scripts/store_submit.py` against the
+Store submission API: it points the draft's package at the new R2 URL,
+commits, waits for the Store to fetch and scan the installer, and submits for
+certification. A new version means a new submission with a new URL — never
+repointing an old one, which the Store forbids, and which the per-version key
+layout makes awkward to do by accident.
+
+The job ends when the submission is accepted, not when it is certified.
+Certification takes hours to days and reports by email and in Partner Center;
+a failure there comes back with the policy cited, and is a human's to read.
+
+Only the package URL changes. Languages, architecture and the silent-install
+switches are read from the draft and sent back as they were, and the listing
+is not touched at all — so listing copy, screenshots and "What's new" are
+still edited in Partner Center, from `docs/store-listing.md`.
+
+It is gated on five `STORE_*` secrets, which the workflow header names, in the
+same three states as signing: none skips and leaves the submission to a
+human, a partial set fails. Two things make it refuse rather than guess — a
+submission already in flight, since the Store takes one at a time, and a
+draft holding anything other than exactly one package.
+
+To submit a version by hand, or retry one whose submission failed, dispatch
+`store-submit.yml` with the version: `gh workflow run store-submit.yml -f
+version=X.Y.Z`. Rerunning `build-installer.yml` is not the retry path,
+because R2 refuses the second upload. A rerun finds the draft already pointing
+at the version and does nothing; `-f force=true` submits it anyway, which is
+what a run that died between updating the draft and submitting needs.
 
 Account setup, Azure Artifact Signing provisioning and the first submission
-are one-time human steps: run `scripts/store_setup_wizard.sh`.
+are one-time human steps: run `scripts/store_setup_wizard.sh`. The API cannot
+make that first submission, and cannot update an app until it exists. The
+API's own credentials are a second one-time setup, after the app is in the
+Store: run `scripts/store_api_wizard.sh`.

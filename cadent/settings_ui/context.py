@@ -41,6 +41,12 @@ class PaneContext:
     request_theme: Callable[[str], None] = _noop
     request_move_overlay: Callable[[], None] = _noop
     request_wizard: Callable[[], None] = _noop
+    # Begin diverting the live hotkey listener's raw key events to the given
+    # callback and return the way to stop (#63). The Hotkeys pane records a
+    # chord through this rather than through Qt key events, which cannot tell
+    # a right Ctrl from a left one and never see the Win key cleanly. The
+    # default hears nothing, so a pane built without an app still builds.
+    capture_keys: Callable[[Callable[[int, bool], None]], Callable[[], None]] =         lambda _on_event: _noop
     # An `audio.LevelMonitor`, or None where nothing should listen. Drives the
     # General pane's microphone meter — the same feedback the wizard gives,
     # for the same question (#105).

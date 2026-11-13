@@ -97,7 +97,11 @@ First run downloads the faster-whisper model (default `small.en`) and creates co
 
 ## Config quick reference (`config.json` in the data dir above)
 
-- `hotkey`: e.g. `"<ctrl>+<cmd>"` (`<cmd>` is the Win key on Windows, Cmd on macOS), `hotkey_mode`: `"hold"`, `"toggle"`, or `"tap_or_hold"` (the default: a tap latches recording on or off, a hold works like `"hold"`)
+- `hotkey`: e.g. `"<ctrl>+<cmd>"` (`<cmd>` is the Win key on Windows, Cmd on macOS).
+  Settings ▸ Hotkeys records it for you — click the chord, press the keys, let
+  go — so nobody has to know this syntax. A modifier part matches either side;
+  name one side with `<rctrl>`, `<lshift>`, `<ralt>`, `<rcmd>` and so on
+  (`<ctrl_r>`-style spellings work too). `hotkey_mode`: `"hold"`, `"toggle"`, or `"tap_or_hold"` (the default: a tap latches recording on or off, a hold works like `"hold"`)
 - `stt_engine`: `faster-whisper` (the default, and the one that runs on any
   hardware) | `parakeet` (needs a GPU on Windows; on macOS it runs on the CPU
   like everything else).
@@ -122,9 +126,14 @@ pytest          # unit tests (vocab, config, history — no audio/GPU needed)
 ruff check .    # lint
 ```
 
-The suite runs on both OSes — `windows-latest` and `macos-14` — for every PR
+The suite runs on both OSes — `windows-latest` and `macos-15` — for every PR
 and every push to `main`, which is what keeps an OS-specific import from
 escaping a platform adapter. Adapter-internal tests skip themselves on the OS
 they don't belong to.
 
 Build order (matches PRD milestones): get the M0 loop working end-to-end first (`hotkey → record → transcribe → inject`), then overlay/tray/history, then cleanup.
+
+## License
+
+MIT — see [LICENSE](LICENSE). The speech and cleanup models Cadent downloads
+carry their own licences, listed in [NOTICE](NOTICE).

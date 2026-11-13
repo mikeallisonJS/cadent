@@ -75,6 +75,39 @@ def test_win32_table_parses_the_default_combos():
     assert parse_combo("<ctrl>+j", WIN32_KEYCODES)[-1] == frozenset({ord("J")})
 
 
+def test_a_chord_part_can_name_one_side_of_a_modifier():
+    """Right Cmd alone collides with nothing, so it is a common push-to-talk
+    pick (#64). Both spellings — `<rctrl>` and pynput's `<ctrl_r>`, the one a
+    Store user actually wrote into config.json (#68) — name one physical key
+    on each table; the unsided part keeps meaning either side."""
+    assert parse_combo("<rctrl>", WIN32_KEYCODES) == [frozenset({0xA3})]
+    assert parse_combo("<ctrl_r>+<cmd>", WIN32_KEYCODES) ==         [frozenset({0xA3}), frozenset({0x5B, 0x5C})]
+    assert parse_combo("<lshift>+<ralt>+<lcmd>", WIN32_KEYCODES) ==         [frozenset({0xA0}), frozenset({0xA5}), frozenset({0x5B})]
+    assert parse_combo("<cmd_r>", DARWIN_KEYCODES) == [frozenset({54})]
+    assert parse_combo("<lctrl>+<rshift>+<alt_l>", DARWIN_KEYCODES) ==         [frozenset({59}), frozenset({60}), frozenset({58})]
+    assert parse_combo("<ctrl>", WIN32_KEYCODES) == [frozenset({0x11, 0xA2, 0xA3})]
+
+
+def test_a_physical_key_names_itself_back():
+    """`part_for` is `group_for`'s inverse, for the recorder (#63): a
+    modifier writes its either-side name, or the side pressed when asked; a
+    key no chord can name is None rather than an `ord` guess."""
+    assert WIN32_KEYCODES.part_for(0xA3) == "<ctrl>"
+    assert WIN32_KEYCODES.part_for(0xA3, sided=True) == "<rctrl>"
+    assert WIN32_KEYCODES.part_for(0x5B, sided=True) == "<lcmd>"
+    assert WIN32_KEYCODES.part_for(ord("J")) == "j"
+    assert WIN32_KEYCODES.part_for(0x78) == "f9"
+    assert WIN32_KEYCODES.part_for(0xBA) is None            # VK_OEM_1, the ; key
+    assert DARWIN_KEYCODES.part_for(54) == "<cmd>"
+    assert DARWIN_KEYCODES.part_for(54, sided=True) == "<rcmd>"
+    assert DARWIN_KEYCODES.part_for(122) == "f1"
+    assert DARWIN_KEYCODES.part_for(0) == "a"
+    for part in ("<ctrl>", "<lctrl>", "<rctrl>"):
+        assert WIN32_KEYCODES.modifier_rank(part) == 0
+    assert WIN32_KEYCODES.modifier_rank("<cmd>") == 3
+    assert WIN32_KEYCODES.modifier_rank("f9") is None
+
+
 def test_win32_table_keeps_the_ord_fallback():
     """Hand-edited configs could always name any single character; the VK for
     A-Z/0-9 is its ASCII uppercase code, and the table keeps that contract."""
@@ -138,10 +171,10 @@ def test_darwin_capabilities_carry_the_accessibility_preflight():
     its preflight; every other platform has none."""
     from cadent.platform import fallback
 
-    assert fallback.CAPABILITIES.permission_preflight is None
+    assert fallback.CAPABILITIES.permission is None
     if sys.platform == "darwin":
         caps = platform.current().capabilities
-        assert caps.permission_preflight == "accessibility"
+        assert caps.permission.name == "accessibility"
 
 
 def test_darwin_capabilities_carry_the_runtime_column():

@@ -116,6 +116,27 @@ def test_a_field_the_file_never_set_is_not_reported():
     assert issues({}) == {}
 
 
+def test_an_unparseable_hotkey_falls_back_instead_of_crashing_startup():
+    """A Store user hand-edited `hotkey` to a spelling the table doesn't know
+    and got a Windows exception dialog instead of an app: the chord raised
+    out of the listener's constructor before the tray existed (#68). Chords
+    sanitize like every other field — default used, file value reported."""
+    cfg, reported = parse({"hotkey": "<bogus>+<cmd>", "cleanup_hotkey": "<nope>"})
+    assert cfg.hotkey == "<ctrl>+<cmd>"
+    assert cfg.cleanup_hotkey == "<ctrl>+<shift>+<alt>"
+    assert {i.field: (i.file_value, i.used) for i in reported} == {
+        "hotkey": ("<bogus>+<cmd>", "<ctrl>+<cmd>"),
+        "cleanup_hotkey": ("<nope>", "<ctrl>+<shift>+<alt>"),
+    }
+
+
+def test_a_parseable_hotkey_is_kept_and_not_reported():
+    cfg, reported = parse({"hotkey": "<ctrl>+<alt>+f9", "cleanup_hotkey": "<cmd>+k"})
+    assert cfg.hotkey == "<ctrl>+<alt>+f9"
+    assert cfg.cleanup_hotkey == "<cmd>+k"
+    assert reported == []
+
+
 def test_an_int_where_a_float_belongs_is_not_a_typo():
     cfg, reported = parse({"vocab_fuzzy_threshold": 1})
     assert cfg.vocab_fuzzy_threshold == 1.0

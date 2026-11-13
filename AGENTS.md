@@ -20,4 +20,4 @@ bot-maintained release PR aggregates them and merging it ships. See
 
 ### Domain docs
 
-Single-context layout — one `CONTEXT.md` at the repo root plus `docs/adr/` for architectural decisions. See `docs/agents/domain.md`.
+Single-context layout — one `GLOSSARY.md` at the repo root plus `docs/adr/` for architectural decisions. See `docs/agents/domain.md`.

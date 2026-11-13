@@ -276,3 +276,83 @@ def test_a_mac_authored_option_reads_as_alt_on_win32():
     from cadent.chord import describe_combo
 
     assert describe_combo("<ctrl>+<option>", WIN32_CAPTIONS) == "Ctrl+Alt"
+
+
+def test_describe_combo_speaks_the_side_in_the_platforms_words():
+    """A sided part (#64) reads as the side plus what that modifier is called
+    here, in either spelling; the caption tables list modifiers, not sides."""
+    from cadent.chord import describe_combo
+
+    assert describe_combo("<rctrl>+<cmd>", WIN32_CAPTIONS) == "Right Ctrl+Win"
+    assert describe_combo("<ctrl_r>+<cmd>", WIN32_CAPTIONS) == "Right Ctrl+Win"
+    assert describe_combo("<cmd_r>", DARWIN_CAPTIONS) == "Right Cmd"
+    assert describe_combo("<lalt>+<ralt>", DARWIN_CAPTIONS) == "Left Option+Right Option"
+    # A bare "r" is a key, not a side of nothing.
+    assert describe_combo("<ctrl>+r", WIN32_CAPTIONS) == "Ctrl+R"
+
+
+# ---- the recorder: parse_combo's inverse (#63) ------------------------------
+
+def record(*events, sided=False):
+    """events are (keycode, is_down); the recorder answers on the last release."""
+    from cadent.chord import ChordRecorder
+    from cadent.platform.keycodes import WIN32_KEYCODES
+
+    rec = ChordRecorder(WIN32_KEYCODES, sided=sided)
+    results = [rec.on_event(code, down) for code, down in events]
+    assert all(r is None for r in results[:-1]), "answered before every key was up"
+    return results[-1]
+
+
+def tap(*codes):
+    return [(c, True) for c in codes] + [(c, False) for c in reversed(codes)]
+
+
+def test_recorder_spells_what_was_held_in_canonical_order():
+    from cadent.chord import parse_combo
+
+    assert record(*tap(CTRL_L, WIN_L)).chord == "<ctrl>+<cmd>"
+    assert record(*tap(ALT_L, CTRL_L)).chord == "<ctrl>+<alt>"      # press order ≠ spelling
+    assert record(*tap(CTRL_L, ALT_L, 0x78)).chord == "<ctrl>+<alt>+f9"
+    assert record(*tap(SHIFT_L, KEY_A)).chord == "<shift>+a"
+    assert record(*tap(CTRL_L, 0xA3)).chord == "<ctrl>"             # both Ctrls, once
+    assert record(*tap(0xA3, WIN_L), sided=True).chord == "<rctrl>+<lcmd>"
+    # Whatever it spells, the parser it feeds agrees with it.
+    for chord in ("<ctrl>+<alt>+f9", "<rctrl>+<lcmd>", "<shift>+a"):
+        parse_combo(chord)
+
+
+def test_recorder_waits_for_the_release_that_leaves_nothing_held():
+    from cadent.chord import ChordRecorder
+    from cadent.platform.keycodes import WIN32_KEYCODES
+
+    rec = ChordRecorder(WIN32_KEYCODES)
+    assert rec.on_event(CTRL_L, True) is None
+    assert rec.on_event(WIN_L, True) is None
+    assert rec.on_event(CTRL_L, False) is None          # Win still down
+    assert rec.on_event(WIN_L, False).chord == "<ctrl>+<cmd>"
+    # A key that was down before recording began is nobody's business.
+    assert rec.on_event(KEY_A, False) is None
+
+
+def test_recorder_refuses_what_cannot_be_a_hotkey():
+    from cadent.chord import LONE_KEY, TWO_KEYS, UNKNOWN_KEY
+
+    assert record(*tap(KEY_A)).problem == LONE_KEY
+    assert record(*tap(0x78)).chord == "f9"                  # a function key alone is fine
+    assert record(*tap(CTRL_L, KEY_A, ord("B"))).problem == TWO_KEYS
+    assert record(*tap(CTRL_L, 0xBA)).problem == UNKNOWN_KEY  # VK_OEM_1: no name for it
+    assert record(*tap(CTRL_L, KEY_A)).problem is None
+
+
+def test_a_sided_chord_hears_that_side_only():
+    """The chord machine already works on keycode sets, so a side is a
+    one-element group: left Ctrl under a `<rctrl>` chord is just another
+    key, and right Ctrl starts a hold on its own."""
+    CTRL_R = 0xA3
+    sm = ChordStateMachine("<rctrl>", "hold", min_hold_s=0.2)
+    assert sm.on_event(CTRL_L, True, False, 0.0) == []
+    assert sm.on_event(CTRL_L, False, False, 0.1) == []
+    acts = sm.on_event(CTRL_R, True, False, 1.0)
+    assert Action.START in acts
+    assert sm.on_event(CTRL_R, False, False, 2.0) == [Action.STOP]
