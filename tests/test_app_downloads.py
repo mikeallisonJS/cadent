@@ -607,3 +607,25 @@ def test_a_failure_with_an_overlay_stays_on_the_pill(app):
     app._show_failure("Dictation failed")
     assert shown == ["Dictation failed"]
     assert app.tray.messages == []
+
+
+# ---- the permission poll lives in the app (ADR 0012) ------------------------
+
+
+def test_the_permission_fault_follows_the_grant_with_no_window_open(
+        app, monkeypatch):
+    """Granting Accessibility with no Settings window open must clear the
+    tray fault; revoking it must raise it again."""
+    from conftest import pin_darwin_ui_platform
+
+    from cadent.tray import TrayLedger
+
+    plat = pin_darwin_ui_platform(monkeypatch, granted=False)
+    ledger = TrayLedger()
+    app.platform = plat
+    app.tray = types.SimpleNamespace(set_fault=ledger.set_fault)
+    app._poll_permission()
+    assert ledger.concerns() == ["permission needed"]
+    plat.focused_app.granted = True
+    app._poll_permission()
+    assert ledger.concerns() == []

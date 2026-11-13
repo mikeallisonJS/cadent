@@ -22,6 +22,20 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
+class PermissionPreflight:
+    """The one OS grant Cadent needs, and the words each surface renders for
+    it (ADR 0012). A platform fact: cross-platform UI carries no permission
+    copy of its own."""
+
+    name: str           # "accessibility" on darwin
+    banner: str         # the persistent Settings banner
+    wizard_body: str    # the wizard page's explanation
+    action_label: str   # the button that calls `request_permission()`
+    waiting: str        # the wizard status line while the grant is missing
+    granted: str        # ... and once it lands
+
+
+@dataclass(frozen=True)
 class KeycodeTable:
     """One OS's key namespace as plain data (#131): VK ints on Windows,
     Carbon/CGEvent ints on macOS — the two never mix in one table.
@@ -104,7 +118,7 @@ class Capabilities:
     gpu_only_engines: frozenset[str]
     show_runtime_combo: bool
     gpu_pack_available: bool                 # wizard page + tray items exist at all
-    permission_preflight: str | None         # None, or "accessibility" on darwin
+    permission: PermissionPreflight | None   # None, or the one grant (darwin: Accessibility)
     autostart_label: str
     app_identity_placeholder: str            # "app.exe" / "com.example.app"
     app_picker: bool                         # running-apps picker vs free text only
@@ -202,7 +216,7 @@ class FocusedApp(Protocol):
         ...
 
     def permission_granted(self) -> bool:
-        """Is `Capabilities.permission_preflight`'s grant present? True where
+        """Is `Capabilities.permission`'s grant present? True where
         there is no preflight, and on a *failed* probe — a broken check must
         nag nobody."""
         ...
@@ -268,9 +282,10 @@ class DesktopEnv(Protocol):
         """Open a file in the user's associated app; never blocks, never raises."""
         ...
 
-    def open_permission_settings(self) -> None:
-        """Deep-link to where `permission_preflight`'s grant is given (System
-        Settings ▸ Accessibility on darwin); a no-op where there is none."""
+    def request_permission(self) -> None:
+        """Start the flow that asks for `Capabilities.permission`'s grant
+        (a deep link to System Settings ▸ Accessibility on darwin); a no-op
+        where there is none. Fire-and-forget: never blocks, never raises."""
         ...
 
     def text_scale_factor(self) -> float: ...
