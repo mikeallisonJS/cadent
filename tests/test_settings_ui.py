@@ -2053,3 +2053,70 @@ def test_reduced_pane_shows_the_note_and_stays_editable(qt_app, paths, monkeypat
     whole = window(True)
     assert whole.overrides.session_note.isHidden()
     whole.close()
+
+
+# ---- Hotkeys where the desktop owns the shortcut (spec §4) --------------------
+
+
+def portal_window(paths, monkeypatch, *, hotkey_available=True, bindings=None,
+                  hotkey="<ctrl>+<cmd>"):
+    import dataclasses
+
+    from conftest import FakeHotkeyTap, make_platform
+
+    from cadent import platform as platform_pkg
+    from cadent.platform.linux import capabilities_for, detect_session
+
+    tap = FakeHotkeyTap()
+    tap.bindings = lambda: bindings or {}
+    plat = make_platform(hotkey_tap=tap)
+    caps = capabilities_for(
+        detect_session({"XDG_SESSION_TYPE": "wayland",
+                        "XDG_CURRENT_DESKTOP": "KDE"}),
+        hotkey_available=hotkey_available)
+    monkeypatch.setattr(platform_pkg, "_current",
+                        dataclasses.replace(plat, capabilities=caps))
+    store = ConfigStore(paths / "config.json")
+    store.set("hotkey", hotkey)
+    return SettingsWindow(store, tokens=tokens("dark"), devices=[])
+
+
+def test_the_hotkeys_pane_shows_what_the_desktop_reports(
+        qt_app, paths, monkeypatch):
+    pytest.importorskip("jeepney")
+    win = portal_window(paths, monkeypatch,
+                        bindings={"dictate": "Ctrl+Meta+Space"})
+    pane = win.hotkeys
+    assert "owns this shortcut" in pane.hotkey_note
+    assert pane.hotkey.text() == "Ctrl+Meta+Space"
+    assert pane.cleanup_hotkey.text() == "Ctrl+Super+C"
+    win.close()
+
+
+def test_a_chord_written_under_x11_is_not_rewritten_and_the_pane_says_so(
+        qt_app, paths, monkeypatch):
+    pytest.importorskip("jeepney")
+    win = portal_window(paths, monkeypatch)
+    assert win.hotkeys.hotkey.text() == "Ctrl+Super+Space"
+    assert "left as it is" in win.hotkeys.config_note.text()
+    assert win.store.config.hotkey == "<ctrl>+<cmd>"
+    win.close()
+
+
+def test_where_there_is_no_shortcut_interface_the_pane_says_the_hotkey_is_off(
+        qt_app, paths, monkeypatch):
+    pytest.importorskip("jeepney")
+    win = portal_window(paths, monkeypatch, hotkey_available=False)
+    assert "hotkey is off" in win.hotkeys.hotkey_note
+    assert win.hotkeys.hotkey.text() == "Off"
+    win.close()
+
+
+def test_hotkey_unavailable_is_its_own_fault_never_the_permission_one():
+    from cadent.tray import FAULTS, TrayLedger
+
+    ledger = TrayLedger()
+    ledger.set_fault("hotkey-unavailable")
+    assert "hotkey unavailable" in FAULTS["hotkey-unavailable"]
+    assert "permission needed" not in ledger.concerns()
+    assert ledger.state(paused=False) == "attention"

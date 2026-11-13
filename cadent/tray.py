@@ -34,6 +34,7 @@ FAULTS: dict[str, str] = {
     "engine-on-cpu": "speech engine rebuilding on CPU",
     "config-unreadable": "config.json couldn't be read",
     "permission-needed": "permission needed",
+    "hotkey-unavailable": "hotkey unavailable on this desktop",
 }
 
 # Offers clear when they are *seen*. Without that split an NVIDIA user who

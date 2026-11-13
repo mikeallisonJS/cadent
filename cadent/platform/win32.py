@@ -285,6 +285,9 @@ class Win32HotkeyTap:
             self._listener.stop()
             self._listener = None
 
+    def bindings(self) -> dict[str, str]:
+        return {}
+
 
 # ---- hardware probes (formerly hardware.py + gpu_pack.py) --------------------
 

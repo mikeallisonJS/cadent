@@ -86,10 +86,10 @@ def test_whole_is_windows_parity_with_no_grant():
     assert c.default_cleanup_combo == config.Config().cleanup_hotkey
 
 
-def test_portal_pastes_first_without_an_overlay_or_auto_learn():
+def test_portal_types_until_a_paste_mechanism_exists_and_has_no_overlay():
     c = caps(WAYLAND_KDE)
     assert (c.default_injection_strategy, c.injection_rungs) == \
-        ("clipboard", ("paste", "type"))
+        ("type", ("type",))
     assert not c.auto_learn_overrides and c.per_app_overrides
     assert c.overlay is None and c.permission.name == "portal"
     assert (c.default_combo, c.default_cleanup_combo) == \
@@ -102,7 +102,7 @@ def test_reduced_differs_from_portal_only_in_per_app_overrides():
                  if getattr(portal_caps, f.name) != getattr(reduced, f.name)}
     assert differing == {"per_app_overrides", "support_tier",
                          "support_tier_summary"}
-    assert reduced.per_app_overrides is False
+    assert portal_caps.per_app_overrides and not reduced.per_app_overrides
 
 
 def test_every_tier_shares_the_linux_facts():
@@ -141,7 +141,7 @@ def test_current_returns_the_linux_platform_on_linux(monkeypatch):
 
 def test_every_seam_adapter_is_handed_the_one_connection():
     portal = Portal(connect=lambda: pytest.fail("startup must not open the bus"))
-    plat = create(X11_KDE, portal=portal)
+    plat = create(WAYLAND_KDE, portal=portal)
     for adapter in (plat.keyboard, plat.clipboard, plat.focused_app,
                     plat.hotkey_tap, plat.hardware, plat.autostart,
                     plat.single_instance, plat.desktop):

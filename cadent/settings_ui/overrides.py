@@ -96,6 +96,9 @@ class OverridesPane(QWidget):
         self.session_note.setVisible(
             not platform.current().capabilities.per_app_overrides)
         layout.addWidget(self.session_note)
+        self.paste_note = platform.current().capabilities.paste_note
+        if self.paste_note is not None:
+            layout.addWidget(label(self.paste_note, "RowHint"))
 
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["App", "Strategy", ""])
