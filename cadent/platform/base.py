@@ -178,6 +178,10 @@ class Capabilities:
     # The Hotkeys pane's note where the desktop owns the binding or there is
     # none; None where Cadent's own recorder is authoritative.
     hotkey_note: str | None = None
+    # The App overrides pane's note where this run has no paste mechanism at
+    # all (Wayland with neither a data-control protocol nor the Clipboard
+    # portal): the ladder is ("type",) and the pane says why. None elsewhere.
+    paste_note: str | None = None
 
 
 class KeyboardOutput(Protocol):

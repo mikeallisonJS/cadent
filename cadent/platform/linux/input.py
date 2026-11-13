@@ -115,9 +115,16 @@ class TokenStore:
 
 class PortalInput:
     def __init__(self, portal: Portal, tokens: TokenStore,
-                 clock: Callable[[], float] = time.monotonic) -> None:
+                 clock: Callable[[], float] = time.monotonic,
+                 needs_input: bool = True) -> None:
         self._portal = portal
         self._tokens = tokens
+        # False where typing and paste both use the compositor's own
+        # protocols: the grant is then the shortcut binding alone (spec §4).
+        self._needs_input = needs_input
+        # Set by `create()` where the Clipboard portal is the paste mechanism;
+        # it asks for the clipboard on each input session before it starts.
+        self.clipboard: Any = None
         self._clock = clock
         self._lock = threading.RLock()
         self._chords: dict[str, str] = {}
@@ -160,7 +167,7 @@ class PortalInput:
     def _attach(self) -> None:
         try:
             self._open_shortcuts()
-            if self._tokens.get(TOKEN_KEY):
+            if self._needs_input and self._tokens.get(TOKEN_KEY):
                 # Granted before: binding again and restoring the input
                 # session are both answered without a dialog.
                 self._bind()
@@ -232,6 +239,8 @@ class PortalInput:
         if code != 0:
             raise PortalError(f"SelectDevices refused (response {code})")
         self._watch(session, "input")
+        if self.clipboard is not None:
+            self.clipboard.request(session)
         self._portal.consent_request(
             lambda t: P.start_remote_desktop_message(session, t),
             lambda code, results: self._on_started(session, code, results))
@@ -247,6 +256,10 @@ class PortalInput:
             self._input_session = session
         self._recovering.discard("input")
         self._spawn("cadent-portal-health", self._refresh)
+
+    def input_session(self) -> str | None:
+        with self._lock:
+            return self._input_session
 
     def send_keysyms(self, presses: list[tuple[int, bool]]) -> bool:
         """(keysym, pressed) in order. False when there is no live session or
@@ -278,7 +291,7 @@ class PortalInput:
             if not have_shortcuts:
                 self._open_shortcuts()
             self._bind()
-            if not have_input:
+            if self._needs_input and not have_input:
                 self._open_input()
         except PortalError as exc:
             log.warning("the portal permission request failed: %s", exc)
@@ -299,7 +312,7 @@ class PortalInput:
         with self._lock:
             self._refreshing = True
             session = self._shortcuts_session
-            have_input = self._input_session is not None
+            have_input = self._input_session is not None or not self._needs_input
         granted = False
         try:
             if session is not None and have_input:

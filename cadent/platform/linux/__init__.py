@@ -18,7 +18,7 @@ from ... import config
 from .. import fallback
 from ..base import Capabilities, PermissionPreflight, Platform
 from ..keycodes import LINUX_KEYCODES
-from . import wayland
+from . import datacontrol, vkeyboard, wayland, wlclient
 from .input import (
     CLEANUP,
     DICTATE,
@@ -28,7 +28,8 @@ from .input import (
     keys_for,
     keysym_for,
 )
-from .portal import GLOBAL_SHORTCUTS, Portal
+from .portal import CLIPBOARD, GLOBAL_SHORTCUTS, Portal
+from .portalclip import PortalClipboard
 
 TOKENS_FILENAME = "portal-tokens.json"
 
@@ -70,6 +71,38 @@ HOTKEY_OWNED_NOTE = ("Your desktop owns this shortcut. Cadent asked for the "
 HOTKEY_UNAVAILABLE_NOTE = ("Your desktop doesn't let apps listen for a global "
                            "shortcut, so Cadent's hotkey is off in this "
                            "session.")
+NO_PASTE_NOTE = "Pasting isn't available in this session, so Cadent types into every app."
+
+
+@dataclasses.dataclass(frozen=True)
+class Mechanisms:
+    """What this run types and pastes with, fixed at startup from what the
+    compositor and the portals offered (spec §2.3, §3)."""
+
+    typing: Literal["virtual-keyboard", "remote-desktop"] = "remote-desktop"
+    paste: Literal["data-control", "portal"] | None = None
+
+    @property
+    def needs_input_session(self) -> bool:
+        return self.typing == "remote-desktop" or self.paste == "portal"
+
+
+def choose_mechanisms(conn: wlclient.Connection | None,
+                      clipboard_portal: Callable[[], bool]) -> Mechanisms:
+    """Virtual keyboard and data-control where the compositor lists them
+    (the wlroots family, KWin for the clipboard); else RemoteDesktop keysyms
+    and the Clipboard portal; else no paste rung. `clipboard_portal` is asked
+    only when the compositor cannot do it itself."""
+    typing = "remote-desktop"
+    paste = None
+    if conn is not None:
+        if vkeyboard.available(conn):
+            typing = "virtual-keyboard"
+        if datacontrol.available(conn):
+            paste = "data-control"
+    if paste is None and clipboard_portal():
+        paste = "portal"
+    return Mechanisms(typing, paste)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -120,10 +153,11 @@ def tier_summary(session: Session) -> str:
 
 
 def capabilities_for(session: Session, *, hotkey_available: bool = True,
-                     toplevel_protocol: bool = True) -> Capabilities:
-    """`hotkey_available` and `toplevel_protocol` are what the startup probe
-    of the Wayland tiers found (spec §1.3); the table is fixed from them for
-    the whole run."""
+                     toplevel_protocol: bool = True,
+                     paste_available: bool = False) -> Capabilities:
+    """`hotkey_available`, `toplevel_protocol` and `paste_available` are what
+    the startup probe of the Wayland tiers found (spec §1.3); the table is
+    fixed from them for the whole run."""
     whole = session.tier == "whole"
     reduced = session.tier == "reduced"
     note = None
@@ -132,11 +166,13 @@ def capabilities_for(session: Session, *, hotkey_available: bool = True,
     return dataclasses.replace(
         fallback.CAPABILITIES,
         keycode_table=LINUX_KEYCODES,
-        # The Wayland tiers type through the RemoteDesktop keysym path until
-        # a paste mechanism exists (ext-data-control, the Clipboard portal);
-        # with none, typing is the only rung for the run (spec §1.3).
-        default_injection_strategy="type",
-        injection_rungs=("type", "paste") if whole else ("type",),
+        # The Wayland tiers paste first, with no automatic fall-through to
+        # typing; with no paste mechanism (neither a data-control protocol nor
+        # the Clipboard portal) typing is the only rung for the run (§1.3).
+        default_injection_strategy=(
+            "type" if whole or not paste_available else "clipboard"),
+        injection_rungs=(("type", "paste") if whole
+                         else ("paste", "type") if paste_available else ("type",)),
         default_overrides=(),
         default_override_reasons={},
         auto_learn_overrides=whole,
@@ -166,6 +202,7 @@ def capabilities_for(session: Session, *, hotkey_available: bool = True,
         chords_need_key=not whole,
         hotkey_available=hotkey_available,
         hotkey_note=note,
+        paste_note=None if whole or paste_available else NO_PASTE_NOTE,
     )
 
 
@@ -183,11 +220,15 @@ class LinuxKeyboard(_PortalAdapter, fallback.NullKeyboard):
     """Wayland typing: RemoteDesktop `NotifyKeyboardKeysym` on the input
     session. Whole's XTEST typing replaces this adapter on X11."""
 
-    def __init__(self, portal: Portal, grants: PortalInput | None = None) -> None:
+    def __init__(self, portal: Portal, grants: PortalInput | None = None,
+                 virtual: vkeyboard.VirtualKeyboard | None = None) -> None:
         super().__init__(portal)
         self._grants = grants
+        self._virtual = virtual
 
     def send_text_units(self, units: list[int]) -> bool:
+        if self._virtual is not None:
+            return self._virtual.send_text_units(units)
         if self._grants is None:
             return super().send_text_units(units)
         presses: list[tuple[int, bool]] = []
@@ -197,6 +238,9 @@ class LinuxKeyboard(_PortalAdapter, fallback.NullKeyboard):
         return self._grants.send_keysyms(presses)
 
     def send_chord(self, keys: list[int]) -> None:
+        if self._virtual is not None:
+            self._virtual.send_chord(keys)
+            return
         if self._grants is None:
             return
         self._grants.send_keysyms([(k, True) for k in keys]
@@ -204,9 +248,29 @@ class LinuxKeyboard(_PortalAdapter, fallback.NullKeyboard):
 
 
 class LinuxClipboard(_PortalAdapter, fallback.MemoryClipboard):
-    def __init__(self, portal: Portal) -> None:
+    """The run's paste mechanism: a data-control selection or the Clipboard
+    portal. With neither, the in-process fallback keeps the seam harmless —
+    the ladder is `("type",)` then and nothing pastes."""
+
+    def __init__(self, portal: Portal,
+                 backend: datacontrol.DataControlClipboard | PortalClipboard | None = None
+                 ) -> None:
         fallback.MemoryClipboard.__init__(self)
         _PortalAdapter.__init__(self, portal)
+        self._backend = backend
+
+    def get_text(self) -> str | None:
+        return super().get_text() if self._backend is None else self._backend.get_text()
+
+    def set_text(self, text: str, exclude_from_history: bool) -> None:
+        if self._backend is None:
+            super().set_text(text, exclude_from_history)
+        else:
+            self._backend.set_text(text, exclude_from_history)
+
+    def sequence_number(self) -> int:
+        return (super().sequence_number() if self._backend is None
+                else self._backend.sequence_number())
 
 
 class LinuxFocusedApp(_PortalAdapter, fallback.NullFocusedApp):
@@ -273,29 +337,46 @@ class LinuxDesktop(_PortalAdapter, fallback.NullDesktop):
 
 def create(env: Mapping[str, str] | None = None,
            portal: Portal | None = None,
-           windows: Callable[[], wayland.PlasmaWindows | None] | None = None
+           windows: Callable[[], wayland.PlasmaWindows | None] | None = None,
+           connect: Callable[[dict[str, str]], wlclient.Connection | None] | None = None
            ) -> Platform:
-    session = detect_session(os.environ if env is None else env)
+    environ = dict(os.environ if env is None else env)
+    session = detect_session(environ)
     portal = portal or Portal()
     if session.tier == "whole":
         return _assemble(capabilities_for(session), portal)
-    # The Wayland tiers probe their portals once; the answers fix the run.
+    # The Wayland tiers probe the compositor and the portals once; the answers
+    # fix the run.
     hotkey_available = portal.has_interface(GLOBAL_SHORTCUTS)
     tracker = None
     if "kde" in session.desktops:
         tracker = (windows or wayland.connect)()
+    conn = (connect or wlclient.connect)(environ)
+    mechanisms = choose_mechanisms(conn, lambda: portal.has_interface(CLIPBOARD))
     caps = capabilities_for(session, hotkey_available=hotkey_available,
-                            toplevel_protocol=tracker is not None)
-    grants = PortalInput(portal, TokenStore(config.DATA_DIR / TOKENS_FILENAME))
-    return _assemble(caps, portal, grants if hotkey_available else None, tracker)
+                            toplevel_protocol=tracker is not None,
+                            paste_available=mechanisms.paste is not None)
+    grants = PortalInput(portal, TokenStore(config.DATA_DIR / TOKENS_FILENAME),
+                         needs_input=mechanisms.needs_input_session)
+    clipboard: datacontrol.DataControlClipboard | PortalClipboard | None = None
+    if mechanisms.paste == "data-control":
+        clipboard = datacontrol.DataControlClipboard(conn)
+    elif mechanisms.paste == "portal":
+        clipboard = grants.clipboard = PortalClipboard(portal, grants.input_session)
+    virtual = (vkeyboard.VirtualKeyboard(conn)
+               if mechanisms.typing == "virtual-keyboard" else None)
+    return _assemble(caps, portal, grants if hotkey_available else None, tracker,
+                     clipboard, virtual)
 
 
 def _assemble(caps: Capabilities, portal: Portal, grants: PortalInput | None = None,
-              windows: wayland.PlasmaWindows | None = None) -> Platform:
+              windows: wayland.PlasmaWindows | None = None,
+              clipboard: datacontrol.DataControlClipboard | PortalClipboard | None = None,
+              virtual: vkeyboard.VirtualKeyboard | None = None) -> Platform:
     return Platform(
         capabilities=caps,
-        keyboard=LinuxKeyboard(portal, grants),
-        clipboard=LinuxClipboard(portal),
+        keyboard=LinuxKeyboard(portal, grants, virtual),
+        clipboard=LinuxClipboard(portal, clipboard),
         focused_app=LinuxFocusedApp(portal, grants, windows),
         hotkey_tap=LinuxHotkeyTap(portal, grants),
         hardware=LinuxHardware(portal),
