@@ -310,6 +310,12 @@ class SingleInstance(Protocol):
         with the process — no stale state to clean up."""
         ...
 
+    def serve_second_launch(self, on_launch: Callable[[], None]) -> None:
+        """Call `on_launch` (on a thread of the adapter's own — callers
+        marshal) whenever a second Cadent starts and finds this one. A no-op
+        where a second launch has nothing to say."""
+        ...
+
 
 class DesktopEnv(Protocol):
     def open_path(self, path: Path) -> None:

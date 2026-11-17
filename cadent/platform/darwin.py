@@ -127,6 +127,9 @@ class DarwinSingleInstance:
         self._fd = fd
         return True
 
+    def serve_second_launch(self, on_launch: Callable[[], None]) -> None:
+        pass
+
 
 # ---- desktop environment (spec §6.3) ------------------------------------------
 

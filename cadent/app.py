@@ -72,6 +72,7 @@ class _Bridge(QObject):
     download_progress = Signal(str, object)    # what, Progress (#115)
     download_finished = Signal(str)            # what — however it ended
     tray_ink_changed = Signal()                # the taskbar's colour mode moved
+    second_launch = Signal()                   # another Cadent started and knocked
 
 
 class CadentApp:
@@ -886,6 +887,14 @@ class CadentApp:
         # here, not beside the other theme subscriptions, because those are
         # connected before this tray exists.
         self.theme.changed.connect(self.tray.refresh)
+        # Without a tray host the second launch is the way back in (§10.2).
+        self.bridge.second_launch.connect(self._on_second_launch)
+        self.platform.single_instance.serve_second_launch(
+            self.bridge.second_launch.emit)
+
+    def _on_second_launch(self) -> None:
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            self._show_settings()
 
     def _toggle_pause(self, checked: bool) -> None:
         self.store.set("paused", checked)
@@ -1088,6 +1097,8 @@ class CadentApp:
             self.settings_window.model_download_cancel_requested.connect(
                 self._cancel_speech_download)
             self.settings_window.ctx.dropped_hotwords = self._dropped_hotwords
+            self.settings_window.pause_requested.connect(self._toggle_pause)
+            self.settings_window.quit_requested.connect(self._quit)
             self.settings_window.show()
             # A fetch that began before this window did. The pane has no way to
             # know — `download_started` fired while there was nobody to hear it

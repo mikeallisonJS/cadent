@@ -151,7 +151,7 @@ def test_every_wayland_seam_adapter_is_handed_the_one_connection():
                   connect=lambda environ: None)
     for adapter in (plat.keyboard, plat.clipboard, plat.focused_app,
                     plat.hotkey_tap, plat.hardware, plat.autostart,
-                    plat.single_instance, plat.desktop):
+                    plat.desktop):
         assert adapter._portal is portal
 
 
@@ -160,8 +160,7 @@ def test_the_whole_tier_starts_without_opening_the_bus():
     through the portal hold the connection — and none of them opens it."""
     portal = Portal(connect=lambda: pytest.fail("startup must not open the bus"))
     plat = create(X11_KDE, portal=portal)
-    for adapter in (plat.hardware, plat.autostart, plat.single_instance,
-                    plat.desktop):
+    for adapter in (plat.hardware, plat.autostart, plat.desktop):
         assert adapter._portal is portal
 
 

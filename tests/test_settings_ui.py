@@ -2120,3 +2120,27 @@ def test_hotkey_unavailable_is_its_own_fault_never_the_permission_one():
     assert "hotkey unavailable" in FAULTS["hotkey-unavailable"]
     assert "permission needed" not in ledger.concerns()
     assert ledger.state(paused=False) == "attention"
+
+
+
+def test_tray_less_settings_shows_footer_and_row_and_follows_the_host(qt_app, paths):
+    hosted = [True]
+    win = SettingsWindow(ConfigStore(paths / "config.json"), tokens=tokens("dark"),
+                         tray_available=lambda: hosted[0])
+    win.show()
+    assert win.footer.isVisible() is False
+    assert win.general.tray_row.isVisible() is False
+    hosted[0] = True
+    win.refresh_tray()
+    hosted[0] = False
+    win.refresh_tray()
+    assert win.footer.isVisible() and win.general.tray_row.isVisible()
+    quits, pauses = [], []
+    win.quit_requested.connect(lambda: quits.append(1))
+    win.pause_requested.connect(pauses.append)
+    win.quit_button.click()
+    win.pause_box.setChecked(True)
+    assert quits == [1] and pauses == [True]
+    hosted[0] = True
+    win.refresh_tray()
+    assert not win.footer.isVisible() and not win.general.tray_row.isVisible()

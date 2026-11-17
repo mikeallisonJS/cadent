@@ -131,6 +131,9 @@ class NullSingleInstance:
     def acquire(self) -> bool:
         return True
 
+    def serve_second_launch(self, on_launch: Callable[[], None]) -> None:
+        pass
+
 
 class NullDesktop:
     def open_path(self, path: Path) -> None:

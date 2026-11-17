@@ -19,6 +19,7 @@ from .. import fallback
 from ..base import Capabilities, PermissionPreflight, Platform
 from ..keycodes import LINUX_KEYCODES
 from . import datacontrol, vkeyboard, wayland, wlclient
+from .desktop import PortalDesktop
 from .desktop_files import DesktopIndex
 from .hardware import ProcHardware
 from .input import (
@@ -30,6 +31,7 @@ from .input import (
     keys_for,
     keysym_for,
 )
+from .instance import LinuxSingleInstance
 from .portal import CLIPBOARD, GLOBAL_SHORTCUTS, Portal
 from .portalclip import PortalClipboard
 
@@ -343,10 +345,10 @@ class LinuxHardware(_PortalAdapter, ProcHardware):
         ProcHardware.__init__(self)
 
 class LinuxAutostart(_PortalAdapter, fallback.NullAutostart): ...
-class LinuxSingleInstance(_PortalAdapter, fallback.NullSingleInstance): ...
-class LinuxDesktop(_PortalAdapter, fallback.NullDesktop):
-    def __init__(self, portal: Portal, grants: PortalInput | None = None) -> None:
-        super().__init__(portal)
+class LinuxDesktop(PortalDesktop):
+    def __init__(self, portal: Portal, grants: PortalInput | None = None,
+                 desktops: tuple[str, ...] = ()) -> None:
+        super().__init__(portal, desktops)
         self._grants = grants
 
     def request_permission(self) -> None:
@@ -376,8 +378,8 @@ def create(env: Mapping[str, str] | None = None,
             hotkey_tap=x11.X11HotkeyTap(gate),
             hardware=LinuxHardware(portal),
             autostart=LinuxAutostart(portal),
-            single_instance=LinuxSingleInstance(portal),
-            desktop=LinuxDesktop(portal),
+            single_instance=LinuxSingleInstance(),
+            desktop=LinuxDesktop(portal, desktops=session.desktops),
         )
     # The Wayland tiers probe the compositor and the portals once; the answers
     # fix the run.
@@ -400,13 +402,14 @@ def create(env: Mapping[str, str] | None = None,
     virtual = (vkeyboard.VirtualKeyboard(conn)
                if mechanisms.typing == "virtual-keyboard" else None)
     return _assemble(caps, portal, grants if hotkey_available else None, tracker,
-                     clipboard, virtual)
+                     clipboard, virtual, session.desktops)
 
 
 def _assemble(caps: Capabilities, portal: Portal, grants: PortalInput | None = None,
               windows: wayland.PlasmaWindows | None = None,
               clipboard: datacontrol.DataControlClipboard | PortalClipboard | None = None,
-              virtual: vkeyboard.VirtualKeyboard | None = None) -> Platform:
+              virtual: vkeyboard.VirtualKeyboard | None = None,
+              desktops: tuple[str, ...] = ()) -> Platform:
     return Platform(
         capabilities=caps,
         keyboard=LinuxKeyboard(portal, grants, virtual),
@@ -415,6 +418,6 @@ def _assemble(caps: Capabilities, portal: Portal, grants: PortalInput | None = N
         hotkey_tap=LinuxHotkeyTap(portal, grants),
         hardware=LinuxHardware(portal),
         autostart=LinuxAutostart(portal),
-        single_instance=LinuxSingleInstance(portal),
-        desktop=LinuxDesktop(portal, grants),
+        single_instance=LinuxSingleInstance(),
+        desktop=LinuxDesktop(portal, grants, desktops),
     )
