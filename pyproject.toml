@@ -24,6 +24,10 @@ dependencies = [
     # Windows-only: the distribution ships win_amd64 wheels exclusively;
     # other platforms get plain `onnxruntime` via the override below.
     "onnxruntime-directml>=1.24; sys_platform == 'win32'",
+    # Linux ships the GPU build so the CUDA provider exists for the Parakeet
+    # edition of the GPU support pack (ADR 0010); without the pack's libraries
+    # it constructs on the CPU EP and the landed rung is read off the session.
+    "onnxruntime-gpu>=1.28; sys_platform == 'linux'",
     "sounddevice>=0.5",
     "numpy>=1.26",
     "PySide6>=6.8",
@@ -75,13 +79,12 @@ include = ["cadent*"]
 
 [tool.uv]
 # faster-whisper requires the `onnxruntime` distribution (for Silero VAD);
-# `onnxruntime-directml` is a different distribution that installs the *same*
-# `onnxruntime` package. Both installed means whichever lands last wins, which
-# is not something to leave to resolution order. The marker keeps plain
-# `onnxruntime` off Windows only, so exactly one distribution provides the
-# module there; every other platform relies on plain `onnxruntime` (>=1.28
-# ships macOS arm64 wheels) and must keep it.
-override-dependencies = ["onnxruntime>=1.28; sys_platform != 'win32'"]
+# `onnxruntime-directml` and `onnxruntime-gpu` are different distributions that
+# install the *same* `onnxruntime` package. Both installed means whichever
+# lands last wins, which is not something to leave to resolution order. The
+# marker keeps plain `onnxruntime` on macOS only (>=1.28 ships arm64 wheels),
+# so exactly one distribution provides the module on every platform.
+override-dependencies = ["onnxruntime>=1.28; sys_platform == 'darwin'"]
 
 # The Vulkan build, not the CPU one (#116). Same version, same wheel tag, one
 # extra backend DLL — ggml-vulkan.dll — and cleanup runs on whatever GPU the

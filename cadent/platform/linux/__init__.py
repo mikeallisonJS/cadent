@@ -20,7 +20,9 @@ from ..base import Capabilities, PermissionPreflight, Platform
 from ..keycodes import LINUX_KEYCODES
 from . import datacontrol, identity, vkeyboard, wayland, wlclient
 from .autostart import XdgAutostart
+from .desktop import PortalDesktop
 from .desktop_files import DesktopIndex
+from .hardware import ProcHardware
 from .input import (
     CLEANUP,
     DICTATE,
@@ -30,7 +32,7 @@ from .input import (
     keys_for,
     keysym_for,
 )
-from .instance import FlockSingleInstance
+from .instance import LinuxSingleInstance
 from .portal import CLIPBOARD, GLOBAL_SHORTCUTS, Portal
 from .portalclip import PortalClipboard
 
@@ -183,6 +185,9 @@ def capabilities_for(session: Session, *, hotkey_available: bool = True,
         stt_runtimes={"faster-whisper": ("auto", "cuda", "cpu"),
                       "parakeet": ("auto", "cuda", "cpu")},
         gpu_only_engines=frozenset(),
+        gpu_pack_editions={"faster-whisper": "cublas-linux",
+                           "parakeet": "cuda13-linux"},
+        recommend_parakeet_on_cpu=True,
         # Never alongside `hotkey-unavailable`: with no shortcut interface
         # there is no grant to ask for.
         permission=None if whole or not hotkey_available else PORTAL_PERMISSION,
@@ -336,10 +341,15 @@ class LinuxHotkeyTap(_PortalAdapter, fallback.NullHotkeyTap):
         return self._grants.bindings() if self._grants is not None else {}
 
 
-class LinuxHardware(_PortalAdapter, fallback.NullHardware): ...
-class LinuxDesktop(_PortalAdapter, fallback.NullDesktop):
-    def __init__(self, portal: Portal, grants: PortalInput | None = None) -> None:
-        super().__init__(portal)
+class LinuxHardware(_PortalAdapter, ProcHardware):
+    def __init__(self, portal: Portal) -> None:
+        _PortalAdapter.__init__(self, portal)
+        ProcHardware.__init__(self)
+
+class LinuxDesktop(PortalDesktop):
+    def __init__(self, portal: Portal, grants: PortalInput | None = None,
+                 desktops: tuple[str, ...] = ()) -> None:
+        super().__init__(portal, desktops)
         self._grants = grants
 
     def register_identity(self) -> None:
@@ -372,8 +382,8 @@ def create(env: Mapping[str, str] | None = None,
             hotkey_tap=x11.X11HotkeyTap(gate),
             hardware=LinuxHardware(portal),
             autostart=XdgAutostart(),
-            single_instance=FlockSingleInstance(),
-            desktop=LinuxDesktop(portal),
+            single_instance=LinuxSingleInstance(),
+            desktop=LinuxDesktop(portal, desktops=session.desktops),
         )
     # The Wayland tiers probe the compositor and the portals once; the answers
     # fix the run.
@@ -396,13 +406,14 @@ def create(env: Mapping[str, str] | None = None,
     virtual = (vkeyboard.VirtualKeyboard(conn)
                if mechanisms.typing == "virtual-keyboard" else None)
     return _assemble(caps, portal, grants if hotkey_available else None, tracker,
-                     clipboard, virtual)
+                     clipboard, virtual, session.desktops)
 
 
 def _assemble(caps: Capabilities, portal: Portal, grants: PortalInput | None = None,
               windows: wayland.PlasmaWindows | None = None,
               clipboard: datacontrol.DataControlClipboard | PortalClipboard | None = None,
-              virtual: vkeyboard.VirtualKeyboard | None = None) -> Platform:
+              virtual: vkeyboard.VirtualKeyboard | None = None,
+              desktops: tuple[str, ...] = ()) -> Platform:
     return Platform(
         capabilities=caps,
         keyboard=LinuxKeyboard(portal, grants, virtual),
@@ -411,6 +422,6 @@ def _assemble(caps: Capabilities, portal: Portal, grants: PortalInput | None = N
         hotkey_tap=LinuxHotkeyTap(portal, grants),
         hardware=LinuxHardware(portal),
         autostart=XdgAutostart(),
-        single_instance=FlockSingleInstance(),
-        desktop=LinuxDesktop(portal, grants),
+        single_instance=LinuxSingleInstance(),
+        desktop=LinuxDesktop(portal, grants, desktops),
     )

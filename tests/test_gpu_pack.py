@@ -7,6 +7,13 @@ import pytest
 
 from cadent import gpu_pack
 
+WIN = gpu_pack.EDITIONS["cublas-win"]
+
+
+@pytest.fixture(autouse=True)
+def _windows_column(pinned_win32_facts):
+    """These tests describe the Windows edition; the Linux ones pin their own."""
+
 # ---- offer gate ------------------------------------------------------------
 
 def test_offers_when_driver_present_but_stt_fell_back_to_cpu(tmp_path):
@@ -56,7 +63,7 @@ def test_no_offer_when_pack_already_installed(tmp_path):
 
 # ---- install ---------------------------------------------------------------
 
-def fake_fetch(dest, dlls=gpu_pack.PACK_DLLS):
+def fake_fetch(project, version, tags, dest, dlls=gpu_pack.PACK_DLLS):
     """Stand-in for the PyPI download: writes a wheel-shaped zip to dest."""
     with zipfile.ZipFile(dest, "w") as zf:
         for dll in dlls:
@@ -69,7 +76,7 @@ def test_install_extracts_exactly_the_pack_dlls(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", "C:\\existing")
     cuda = tmp_path / "cuda"
 
-    gpu_pack.install_pack(cuda, fetch=fake_fetch)
+    gpu_pack.install_pack(WIN, cuda, fetch=fake_fetch)
 
     assert sorted(p.name for p in cuda.iterdir()) == sorted(gpu_pack.PACK_DLLS)
     assert (cuda / "cublas64_12.dll").read_bytes() == b"MZcublas64_12.dll"
@@ -80,7 +87,7 @@ def test_install_prepends_cuda_dir_to_path(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", "C:\\existing")
     cuda = tmp_path / "cuda"
 
-    gpu_pack.install_pack(cuda, fetch=fake_fetch)
+    gpu_pack.install_pack(WIN, cuda, fetch=fake_fetch)
 
     assert os.environ["PATH"] == f"{cuda}{os.pathsep}C:\\existing"
 
@@ -91,9 +98,10 @@ def test_install_fails_cleanly_when_wheel_lacks_a_dll(tmp_path, monkeypatch):
 
     with pytest.raises(RuntimeError):
         gpu_pack.install_pack(
-            cuda, fetch=lambda dest: fake_fetch(dest, dlls=("cublas64_12.dll",)))
+            WIN, cuda,
+            fetch=lambda *a: fake_fetch(*a, dlls=("cublas64_12.dll",)))
 
-    assert not gpu_pack.pack_installed(cuda)
+    assert not gpu_pack.pack_installed(WIN, cuda)
     assert os.environ["PATH"] == "C:\\existing"      # no prepend on failure
     assert not list(cuda.glob("*.whl"))              # temp wheel cleaned up
 
@@ -102,7 +110,7 @@ def test_install_leaves_no_wheel_behind(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", "C:\\existing")
     cuda = tmp_path / "cuda"
 
-    gpu_pack.install_pack(cuda, fetch=fake_fetch)
+    gpu_pack.install_pack(WIN, cuda, fetch=fake_fetch)
 
     assert not list(cuda.glob("*.whl"))
 

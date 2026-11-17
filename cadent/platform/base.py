@@ -186,6 +186,13 @@ class Capabilities:
     # Wayland the only source of the `app_id`. None where the OS has no such
     # notion.
     desktop_file_name: str | None = None
+    # Which GPU-pack edition (a `gpu_pack.EDITIONS` key) serves each speech
+    # engine here; an engine absent from the table has no pack to offer.
+    gpu_pack_editions: Mapping[str, str] = field(default_factory=dict)
+    # True where Parakeet on the CPU is fast enough (docs/research/
+    # linux-parakeet-cpu-bench.md) to wear the Recommended chip on a machine
+    # with no GPU Whisper row.
+    recommend_parakeet_on_cpu: bool = False
 
 
 class KeyboardOutput(Protocol):
@@ -280,6 +287,12 @@ class HardwareProbe(Protocol):
 
     def nvidia_driver_present(self) -> bool: ...
 
+    def cuda_driver_version(self) -> int | None:
+        """The CUDA version the installed driver supports, as
+        `cuDriverGetVersion` reports it (13000 for CUDA 13.0 — an R580
+        driver), or None where there is no driver or it cannot be read."""
+        ...
+
     def metal_gpu_present(self) -> bool:
         """A Metal GPU the llama.cpp build can offload to — true on every
         Apple Silicon Mac, false everywhere else (#146)."""
@@ -301,10 +314,10 @@ class SingleInstance(Protocol):
         with the process — no stale state to clean up."""
         ...
 
-    def listen(self, on_second_launch: Callable[[], None]) -> None:
-        """Call `on_second_launch`, from any thread, when a later launch is
-        refused because we hold the claim; a no-op where the OS gives the
-        refused launch nothing to tell us with."""
+    def serve_second_launch(self, on_launch: Callable[[], None]) -> None:
+        """Call `on_launch` (on a thread of the adapter's own — callers
+        marshal) whenever a second Cadent starts and finds this one. A no-op
+        where a second launch has nothing to say."""
         ...
 
 

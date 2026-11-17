@@ -21,7 +21,7 @@ if sys.platform == "win32":
 pytest.importorskip("jeepney")
 
 from cadent.platform.linux import autostart, desktop_files, identity  # noqa: E402
-from cadent.platform.linux.instance import FlockSingleInstance  # noqa: E402
+from cadent.platform.linux.instance import LinuxSingleInstance  # noqa: E402
 
 # ---- LOAD_BEARING --------------------------------------------------------------
 
@@ -170,27 +170,27 @@ def _lock_in_child(lock) -> int:
 
 def test_first_acquire_wins_and_holds(tmp_path):
     lock = tmp_path / "cadent.lock"
-    first = FlockSingleInstance(lock)
+    first = LinuxSingleInstance(lock)
     assert first.acquire() is True
     assert _lock_in_child(lock) == 1
-    assert FlockSingleInstance(lock).acquire() is False
+    assert LinuxSingleInstance(lock).acquire() is False
 
 
 def test_second_launch_knocks_on_the_running_instance(tmp_path):
     lock = tmp_path / "cadent.lock"
-    first = FlockSingleInstance(lock)
+    first = LinuxSingleInstance(lock)
     assert first.acquire()
     knocked = threading.Event()
-    first.listen(knocked.set)
-    assert FlockSingleInstance(lock).acquire() is False
+    first.serve_second_launch(knocked.set)
+    assert LinuxSingleInstance(lock).acquire() is False
     assert knocked.wait(2)
 
 
 def test_a_launch_with_nobody_listening_is_quiet(tmp_path):
     lock = tmp_path / "cadent.lock"
-    holder = FlockSingleInstance(lock)
+    holder = LinuxSingleInstance(lock)
     assert holder.acquire()
-    assert FlockSingleInstance(lock).acquire() is False
+    assert LinuxSingleInstance(lock).acquire() is False
 
 
 def test_the_desktop_file_name_is_the_entry_id():

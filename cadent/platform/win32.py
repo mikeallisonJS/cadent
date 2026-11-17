@@ -349,6 +349,9 @@ class Win32Hardware:
         except OSError:
             return False
 
+    def cuda_driver_version(self) -> int | None:
+        return None
+
     def metal_gpu_present(self) -> bool:
         return False
 
@@ -411,7 +414,7 @@ class Win32SingleInstance:
         ctypes.windll.kernel32.CreateMutexW(None, False, _MUTEX_NAME)
         return ctypes.windll.kernel32.GetLastError() != ERROR_ALREADY_EXISTS
 
-    def listen(self, on_second_launch: Callable[[], None]) -> None:
+    def serve_second_launch(self, on_launch: Callable[[], None]) -> None:
         pass
 
 
@@ -451,9 +454,6 @@ _advapi32.RegNotifyChangeKeyValue.restype = wintypes.LONG
 
 
 class Win32Desktop:
-    def register_identity(self) -> None:
-        pass
-
     # The taskbar's colour mode. `AppsUseLightTheme` sits beside it and is the
     # one Qt reports through colorScheme(); the two disagree often enough that
     # reading the wrong one puts a black icon on a black taskbar.
@@ -648,6 +648,7 @@ CAPABILITIES = Capabilities(
     gpu_only_engines=frozenset({"parakeet"}),
     show_runtime_combo=True,
     gpu_pack_available=True,
+    gpu_pack_editions={"faster-whisper": "cublas-win"},
     permission=None,
     autostart_label="Start with Windows",
     app_identity_placeholder="app.exe",

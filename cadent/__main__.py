@@ -3,20 +3,17 @@
 from __future__ import annotations
 
 import logging
-import os
 import sys
 
 
 def _enable_cuda_support_pack() -> None:
-    """GPU-when-present (M3 packaging research, #40): ctranslate2 delay-loads
-    cuBLAS through the plain Windows DLL search order, which consults the
-    process PATH — os.add_dll_directory does not apply. Prepend the optional
-    support-pack dir before anything can touch CUDA; if it's absent, the
-    stt.py probe falls back to CPU as usual."""
-    from .config import CUDA_DIR
+    """GPU-when-present (M3 packaging research, #40): make every installed
+    support-pack edition findable before anything can touch CUDA — a PATH
+    prepend on Windows, an RTLD_LOCAL preload on Linux (ADR 0010). If a pack
+    is absent, the stt.py probe falls back to CPU as usual."""
+    from . import gpu_pack
 
-    if CUDA_DIR.is_dir():
-        os.environ["PATH"] = str(CUDA_DIR) + os.pathsep + os.environ.get("PATH", "")
+    gpu_pack.activate_installed()
 
 
 def _setup_logging() -> None:

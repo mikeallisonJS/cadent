@@ -178,7 +178,8 @@ def test_the_menu_carries_the_sections_in_order(tray):
     assert labels == ["Cadent — ready · cleanup off", "Finish setup…",
                       "Clean up transcripts (AI)", "Pause dictation",
                       "Settings…", "History…",
-                      tray.gpu_action.text(), "Quit"]
+                      tray.gpu_action.text(), tray.gpu_driver_action.text(),
+                      "Quit"]
 
 
 def test_settings_and_history_never_move_when_the_gpu_item_appears(tray):

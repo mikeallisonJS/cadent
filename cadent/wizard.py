@@ -185,6 +185,7 @@ class SetupWizard(QDialog):
         # device looks like, on the one page built to catch one.
         self._mic = mic_monitor
         self._install_gpu_pack = install_gpu_pack
+        self._gpu_engine = "faster-whisper"   # the engine the GPU page discloses
         # Drives the microphone page's live meter; both the timer and the
         # capture stop whenever that page is not showing.
         self._meter_timer = QTimer(self)
@@ -275,11 +276,14 @@ class SetupWizard(QDialog):
                     answer.append(False)
                     return
                 detected = hardware.detect_cached()
-                eligible = hardware.should_offer_gpu_page(
+                engine = settings.engine_for_model(
+                    hardware.suggest_for_this_machine().model)
+                edition = gpu_pack.edition_for(engine)
+                self._gpu_engine = engine
+                eligible = edition is not None and hardware.should_offer_gpu_page(
                     detected.nvidia_driver, detected.vram_gb,
-                    gpu_pack.pack_installed(),
-                    settings.engine_for_model(
-                        hardware.suggest_for_this_machine().model))
+                    gpu_pack.pack_installed(edition), engine,
+                    cuda_driver=detected.cuda_driver)
             except Exception:
                 log.debug("hardware probe failed", exc_info=True)
                 eligible = False
@@ -534,9 +538,11 @@ class SetupWizard(QDialog):
     def _build_gpu(self) -> QWidget | None:
         """Offered **before** model choice, because accepting it changes the
         recommendation."""
+        edition = gpu_pack.edition_for(self._gpu_engine)
+        what, size = (edition.what, edition.size) if edition else ("NVIDIA's", "")
         self._add(label(
-            f"This PC has an NVIDIA GPU. Cadent can download NVIDIA's "
-            f"cuBLAS libraries ({gpu_pack.DOWNLOAD_SIZE}, one-time, from PyPI) "
+            f"This PC has an NVIDIA GPU. Cadent can download {what} "
+            f"libraries ({size}, one-time, from PyPI) "
             "to transcribe on the GPU instead of the CPU. This is the only "
             "network activity Cadent performs besides the speech model.",
             "RowDesc"))
@@ -554,7 +560,7 @@ class SetupWizard(QDialog):
         wanted = getattr(self, "gpu_yes", None)
         if wanted is not None and wanted.isChecked() \
                 and self._install_gpu_pack is not None:
-            self._install_gpu_pack()
+            self._install_gpu_pack(self._gpu_engine)
 
     def _build_model(self) -> QWidget | None:
         """Explicit, consented, sized and sourced — the privacy claim made

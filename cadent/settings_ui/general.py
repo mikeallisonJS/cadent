@@ -19,6 +19,10 @@ from .widgets import CappedCombo, Notice, caps, card, label, page_title, row
 
 THEME_CHOICES = (("system", "Follow system"), ("light", "Light"), ("dark", "Dark"))
 
+NO_TRAY_NOTE = ("No system tray found, so Pause and Quit live here. On GNOME, "
+                "the AppIndicator and KStatusNotifierItem Support extension "
+                "adds one.")
+
 # The two lines below name an OS setting, so they are platform facts read from
 # Capabilities (`theme_subtitle`, `high_contrast_reason`) rather than constants
 # here: Windows has an app colour mode and a contrast theme, macOS has one
@@ -94,6 +98,11 @@ class GeneralPane(QWidget):
 
         # Every group is named now: Setup taking the bare-first-card slot would
         # otherwise leave these rows heading-less and reading as Setup's own.
+        # Runtime state, not a Capabilities fact: a tray host can arrive (the
+        # extension gets enabled) or leave mid-session (§10.2).
+        self.tray_row = row(t, "System tray", desc=NO_TRAY_NOTE)
+        self.tray_row.setVisible(False)
+
         layout.addSpacing(int(t["sp_2"]))
         layout.addWidget(caps("Basics", t))
         layout.addWidget(card([
@@ -105,6 +114,7 @@ class GeneralPane(QWidget):
             row(t, "Say something to check it", self.level,
                 desc="The bars follow your voice"),
             row(t, "Theme", self.theme, desc=self._caps.theme_subtitle),
+            self.tray_row,
         ]))
         # Carried *visibly* as well as as accessibleDescription: the control
         # stays enabled under a contrast theme, and the reason it currently
@@ -147,6 +157,9 @@ class GeneralPane(QWidget):
         layout.addStretch()
 
         self.set_high_contrast(high_contrast)
+
+    def set_tray_missing(self, missing: bool) -> None:
+        self.tray_row.setVisible(missing)
 
     # ---- the microphone meter ---------------------------------------------
 

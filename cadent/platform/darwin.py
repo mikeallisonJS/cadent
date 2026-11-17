@@ -127,7 +127,7 @@ class DarwinSingleInstance:
         self._fd = fd
         return True
 
-    def listen(self, on_second_launch: Callable[[], None]) -> None:
+    def serve_second_launch(self, on_launch: Callable[[], None]) -> None:
         pass
 
 
@@ -157,9 +157,6 @@ ACCESSIBILITY_PERMISSION = PermissionPreflight(
 
 
 class DarwinDesktop:
-    def register_identity(self) -> None:
-        pass
-
     def open_path(self, path: Path) -> None:
         try:
             subprocess.Popen(["open", str(path)])  # associated app, not a Finder reveal
@@ -521,6 +518,9 @@ class DarwinHardware:
 
     def nvidia_driver_present(self) -> bool:
         return False
+
+    def cuda_driver_version(self) -> int | None:
+        return None
 
     def metal_gpu_present(self) -> bool:
         return True

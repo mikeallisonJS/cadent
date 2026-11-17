@@ -65,13 +65,14 @@ class _Bridge(QObject):
     llm_ready = Signal()
     llm_failed = Signal(str)
     gpu_offer = Signal()        # STT landed on CPU with an NVIDIA GPU idle (#55)
+    gpu_driver_update = Signal()  # Parakeet edition withheld: driver older than R580
     gpu_installed = Signal(str) # support pack install finished; arg = error or ""
     speech_load_done = Signal(str, str)        # outcome, detail (#114)
     download_started = Signal(str)             # what — a fetch is under way
     download_progress = Signal(str, object)    # what, Progress (#115)
     download_finished = Signal(str)            # what — however it ended
     tray_ink_changed = Signal()                # the taskbar's colour mode moved
-    second_launch = Signal()                   # another Cadent was started and refused
+    second_launch = Signal()                   # another Cadent started and knocked
 
 
 class CadentApp:
@@ -126,9 +127,6 @@ class CadentApp:
         self.qt.setQuitOnLastWindowClosed(False)
         # One mark for every window, the taskbar and Alt-Tab (#73).
         self.qt.setWindowIcon(icons.app_icon())
-        if self.platform.capabilities.desktop_file_name:
-            self.qt.setDesktopFileName(self.platform.capabilities.desktop_file_name)
-        self.platform.desktop.register_identity()
         # The design language, before any window exists. Windows' Text size
         # setting is read once here and applied on this launch; no Qt
         # mechanism honours it and there is no watcher (M4 8.5).
@@ -180,6 +178,7 @@ class CadentApp:
         self.bridge.llm_ready.connect(self._handle_llm_ready)
         self.bridge.llm_failed.connect(self._handle_llm_failure)
         self.bridge.gpu_offer.connect(self._on_gpu_offer)
+        self.bridge.gpu_driver_update.connect(self._on_gpu_driver_update)
         self.bridge.gpu_installed.connect(self._on_gpu_installed)
         self.bridge.speech_load_done.connect(self._on_speech_load_done)
         self.bridge.download_started.connect(self._on_download_started)
@@ -197,11 +196,6 @@ class CadentApp:
                                               on_error=self.bridge.llm_failed.emit)
 
         self._setup_tray()
-        self.bridge.second_launch.connect(self._on_second_launch)
-        self.platform.single_instance.listen(self.bridge.second_launch.emit)
-        if self.config.autostart:
-            # Reading the entry heals a path left stale by a moved AppImage.
-            self.platform.autostart.is_enabled()
         self._start_permission_poll()
         self.tray.set_fault("hotkey-unavailable",
                             not self.platform.capabilities.hotkey_available)
@@ -260,11 +254,19 @@ class CadentApp:
         # Every fresh engine, not only a downloaded one: a model picked off
         # disk after an earlier one failed must clear that fault too.
         self.bridge.stt_loaded.emit()
+        detected = hardware.detect_safely()
         if gpu_pack.should_offer(self.config.stt_device,
                                  getattr(self._stt, "device", "cpu"),
                                  stt_engine=self.config.stt_engine,
-                                 driver_present=hardware.detect_safely().nvidia_driver):
+                                 driver_present=detected.nvidia_driver,
+                                 driver_cuda=detected.cuda_driver):
             self.bridge.gpu_offer.emit()
+        elif (self.config.stt_device in ("auto", "cuda")
+              and getattr(self._stt, "device", "cpu") == "cpu"
+              and gpu_pack.needs_driver_update(
+                  self.config.stt_engine, detected.nvidia_driver,
+                  detected.cuda_driver)):
+            self.bridge.gpu_driver_update.emit()
         return LOADED
 
     def _stt_request(self) -> tuple[str, str, str]:
@@ -492,27 +494,39 @@ class CadentApp:
         toast points at a tray menu item, so a missed toast still leaves the
         offer reachable. The offer also drives amber — but only until the menu
         has been opened, so it can never become permanent scenery (§3.4)."""
-        self.tray.offer_gpu_pack()
+        self.tray.offer_gpu_pack(self._pack_size())
         self.tray.message(
             "Cadent — GPU detected",
             "Dictation is running on CPU, but this PC has an NVIDIA GPU. "
-            f"Pick 'Download GPU support pack' ({gpu_pack.DOWNLOAD_SIZE}, one-time) "
+            f"Pick 'Download GPU support pack' ({self._pack_size()}, one-time) "
             "from the tray menu to speed up transcription.",
             QSystemTrayIcon.MessageIcon.Information, 10_000)
 
-    def _on_gpu_download_clicked(self) -> None:
+    def _on_gpu_driver_update(self) -> None:
+        self.tray.show_driver_update(gpu_pack.DRIVER_UPDATE_NOTE)
+
+    def _pack_size(self) -> str:
+        return gpu_pack.download_size(self.config.stt_engine)
+
+    def _on_gpu_download_clicked(self, engine: str | None = None) -> None:
+        """`engine` is the wizard's: its page disclosed the edition of the
+        engine it is about to recommend, not the one config.json still names."""
+        edition = gpu_pack.edition_for(engine or self.config.stt_engine)
+        if edition is None:
+            return
         self.tray.gpu_action.setEnabled(False)
         self.tray.message(
             "Cadent — one-time GPU support pack download",
-            f"Downloading NVIDIA cuBLAS ({gpu_pack.DOWNLOAD_SIZE}) from PyPI. "
+            f"Downloading {edition.what} ({edition.size}) from PyPI. "
             "This is the only network activity Cadent performs. "
             "Dictation keeps working on CPU until it finishes.",
             QSystemTrayIcon.MessageIcon.Information, 10_000)
-        threading.Thread(target=self._install_gpu_pack, daemon=True).start()
+        threading.Thread(target=self._install_gpu_pack, args=(edition,),
+                         daemon=True).start()
 
-    def _install_gpu_pack(self) -> None:
+    def _install_gpu_pack(self, edition: gpu_pack.Edition) -> None:
         try:
-            gpu_pack.install_pack()
+            gpu_pack.install_pack(edition)
         except Exception as exc:
             log.exception("GPU support pack install failed")
             self.bridge.gpu_installed.emit(str(exc))
@@ -532,8 +546,8 @@ class CadentApp:
         self.tray.message(
             "Cadent", "GPU support pack ready — restarting the speech engine on GPU.",
             QSystemTrayIcon.MessageIcon.Information, 4_000)
-        # install_pack prepended the pack dir to PATH, so the reload's CUDA
-        # probe can find cuBLAS now. Detach-then-reload, #38 pattern.
+        # install_pack activated the edition (PATH or preload), so the reload's
+        # CUDA probe can find the libraries now. Detach-then-reload, #38 pattern.
         self._stt = None
         threading.Thread(target=self._load_stt, daemon=True).start()
 
@@ -873,6 +887,14 @@ class CadentApp:
         # here, not beside the other theme subscriptions, because those are
         # connected before this tray exists.
         self.theme.changed.connect(self.tray.refresh)
+        # Without a tray host the second launch is the way back in (§10.2).
+        self.bridge.second_launch.connect(self._on_second_launch)
+        self.platform.single_instance.serve_second_launch(
+            self.bridge.second_launch.emit)
+
+    def _on_second_launch(self) -> None:
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            self._show_settings()
 
     def _toggle_pause(self, checked: bool) -> None:
         self.store.set("paused", checked)
@@ -1058,12 +1080,6 @@ class CadentApp:
         self.ptt.capture(on_event)
         return self.ptt.release_capture
 
-    def _on_second_launch(self) -> None:
-        """A refused second launch opens Settings where there is no tray to
-        reach it from (spec §10.2); with a tray the running icon is the door."""
-        if not QSystemTrayIcon.isSystemTrayAvailable():
-            self._show_settings()
-
     def _show_settings(self, pane: str | None = None) -> None:
         if self.settings_window is None or not self.settings_window.isVisible():
             self.settings_window = SettingsWindow(
@@ -1081,6 +1097,8 @@ class CadentApp:
             self.settings_window.model_download_cancel_requested.connect(
                 self._cancel_speech_download)
             self.settings_window.ctx.dropped_hotwords = self._dropped_hotwords
+            self.settings_window.pause_requested.connect(self._toggle_pause)
+            self.settings_window.quit_requested.connect(self._quit)
             self.settings_window.show()
             # A fetch that began before this window did. The pane has no way to
             # know — `download_started` fired while there was nobody to hear it

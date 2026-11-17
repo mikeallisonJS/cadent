@@ -107,6 +107,9 @@ class NullHardware:
     def nvidia_driver_present(self) -> bool:
         return False
 
+    def cuda_driver_version(self) -> int | None:
+        return None
+
     def metal_gpu_present(self) -> bool:
         return False
 
@@ -128,14 +131,11 @@ class NullSingleInstance:
     def acquire(self) -> bool:
         return True
 
-    def listen(self, on_second_launch: Callable[[], None]) -> None:
+    def serve_second_launch(self, on_launch: Callable[[], None]) -> None:
         pass
 
 
 class NullDesktop:
-    def register_identity(self) -> None:
-        pass
-
     def open_path(self, path: Path) -> None:
         try:                             # pragma: no cover - dev convenience
             subprocess.Popen(["xdg-open", str(path)])
@@ -183,6 +183,7 @@ CAPABILITIES = Capabilities(
     gpu_only_engines=frozenset({"parakeet"}),
     show_runtime_combo=True,
     gpu_pack_available=True,
+    gpu_pack_editions={"faster-whisper": "cublas-win"},
     permission=None,
     autostart_label="Start with Windows",
     app_identity_placeholder="app.exe",
