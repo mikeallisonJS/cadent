@@ -20,7 +20,7 @@ from collections.abc import Callable
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
-from . import gpu_pack, icons, platform
+from . import icons, platform
 from .downloads import Progress
 
 READY, PAUSED, ATTENTION = "ready", "paused", "attention"
@@ -205,12 +205,18 @@ class Tray:
         self.gpu_separator = self.menu.addSeparator() \
             if self._gpu_pack_available else QAction()
         self.gpu_separator.setVisible(False)
-        self.gpu_action = QAction(
-            f"Download GPU support pack ({gpu_pack.DOWNLOAD_SIZE})")
+        self.gpu_action = QAction("Download GPU support pack")
+        # The row where the engine's edition is withheld for want of a newer
+        # NVIDIA driver (Parakeet needs R580+): nothing to click, one thing
+        # to do, so it is a disabled line rather than an action.
+        self.gpu_driver_action = QAction()
+        self.gpu_driver_action.setEnabled(False)
+        self.gpu_driver_action.setVisible(False)
         self.gpu_action.setVisible(False)
         self.gpu_action.triggered.connect(on_gpu_download)
         if self._gpu_pack_available:
             self.menu.addAction(self.gpu_action)
+            self.menu.addAction(self.gpu_driver_action)
 
         self.menu.addSeparator()
         self.quit_action = QAction("Quit")
@@ -257,12 +263,25 @@ class Tray:
             self.ledger.set_activity(f"downloading the {what}, {percent}%")
         self.refresh()
 
-    def offer_gpu_pack(self) -> None:
+    def offer_gpu_pack(self, size: str = "") -> None:
+        """Offer the pack, disclosing the size of the edition this engine
+        would fetch."""
         if not self._gpu_pack_available:
             return      # nothing to download here; never amber for it either
+        self.gpu_action.setText(
+            f"Download GPU support pack ({size})" if size
+            else "Download GPU support pack")
         self.ledger.raise_offer("gpu-pack")
         self._show_gpu_offer(True)
         self.refresh()
+
+    def show_driver_update(self, note: str) -> None:
+        """Say why no pack is offered: the driver, not the pack, is the gap."""
+        if not self._gpu_pack_available:
+            return
+        self.gpu_driver_action.setText(note)
+        self.gpu_driver_action.setVisible(True)
+        self.gpu_separator.setVisible(True)
 
     def withdraw_gpu_offer(self) -> None:
         """The pack is installed — there is nothing left to offer."""
@@ -277,6 +296,8 @@ class Tray:
         """
         self.gpu_separator.setVisible(shown)
         self.gpu_action.setVisible(shown)
+        if shown:
+            self.gpu_driver_action.setVisible(False)
 
     def refresh(self) -> None:
         state = self.ledger.state(self._paused)

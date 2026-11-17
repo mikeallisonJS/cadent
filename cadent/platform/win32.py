@@ -349,6 +349,9 @@ class Win32Hardware:
         except OSError:
             return False
 
+    def cuda_driver_version(self) -> int | None:
+        return None
+
     def metal_gpu_present(self) -> bool:
         return False
 
@@ -642,6 +645,7 @@ CAPABILITIES = Capabilities(
     gpu_only_engines=frozenset({"parakeet"}),
     show_runtime_combo=True,
     gpu_pack_available=True,
+    gpu_pack_editions={"faster-whisper": "cublas-win"},
     permission=None,
     autostart_label="Start with Windows",
     app_identity_placeholder="app.exe",

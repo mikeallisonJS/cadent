@@ -20,6 +20,7 @@ from ..base import Capabilities, PermissionPreflight, Platform
 from ..keycodes import LINUX_KEYCODES
 from . import datacontrol, vkeyboard, wayland, wlclient
 from .desktop_files import DesktopIndex
+from .hardware import ProcHardware
 from .input import (
     CLEANUP,
     DICTATE,
@@ -181,6 +182,9 @@ def capabilities_for(session: Session, *, hotkey_available: bool = True,
         stt_runtimes={"faster-whisper": ("auto", "cuda", "cpu"),
                       "parakeet": ("auto", "cuda", "cpu")},
         gpu_only_engines=frozenset(),
+        gpu_pack_editions={"faster-whisper": "cublas-linux",
+                           "parakeet": "cuda13-linux"},
+        recommend_parakeet_on_cpu=True,
         # Never alongside `hotkey-unavailable`: with no shortcut interface
         # there is no grant to ask for.
         permission=None if whole or not hotkey_available else PORTAL_PERMISSION,
@@ -333,7 +337,11 @@ class LinuxHotkeyTap(_PortalAdapter, fallback.NullHotkeyTap):
         return self._grants.bindings() if self._grants is not None else {}
 
 
-class LinuxHardware(_PortalAdapter, fallback.NullHardware): ...
+class LinuxHardware(_PortalAdapter, ProcHardware):
+    def __init__(self, portal: Portal) -> None:
+        _PortalAdapter.__init__(self, portal)
+        ProcHardware.__init__(self)
+
 class LinuxAutostart(_PortalAdapter, fallback.NullAutostart): ...
 class LinuxSingleInstance(_PortalAdapter, fallback.NullSingleInstance): ...
 class LinuxDesktop(_PortalAdapter, fallback.NullDesktop):

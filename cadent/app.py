@@ -65,6 +65,7 @@ class _Bridge(QObject):
     llm_ready = Signal()
     llm_failed = Signal(str)
     gpu_offer = Signal()        # STT landed on CPU with an NVIDIA GPU idle (#55)
+    gpu_driver_update = Signal()  # Parakeet edition withheld: driver older than R580
     gpu_installed = Signal(str) # support pack install finished; arg = error or ""
     speech_load_done = Signal(str, str)        # outcome, detail (#114)
     download_started = Signal(str)             # what — a fetch is under way
@@ -176,6 +177,7 @@ class CadentApp:
         self.bridge.llm_ready.connect(self._handle_llm_ready)
         self.bridge.llm_failed.connect(self._handle_llm_failure)
         self.bridge.gpu_offer.connect(self._on_gpu_offer)
+        self.bridge.gpu_driver_update.connect(self._on_gpu_driver_update)
         self.bridge.gpu_installed.connect(self._on_gpu_installed)
         self.bridge.speech_load_done.connect(self._on_speech_load_done)
         self.bridge.download_started.connect(self._on_download_started)
@@ -251,11 +253,19 @@ class CadentApp:
         # Every fresh engine, not only a downloaded one: a model picked off
         # disk after an earlier one failed must clear that fault too.
         self.bridge.stt_loaded.emit()
+        detected = hardware.detect_safely()
         if gpu_pack.should_offer(self.config.stt_device,
                                  getattr(self._stt, "device", "cpu"),
                                  stt_engine=self.config.stt_engine,
-                                 driver_present=hardware.detect_safely().nvidia_driver):
+                                 driver_present=detected.nvidia_driver,
+                                 driver_cuda=detected.cuda_driver):
             self.bridge.gpu_offer.emit()
+        elif (self.config.stt_device in ("auto", "cuda")
+              and getattr(self._stt, "device", "cpu") == "cpu"
+              and gpu_pack.needs_driver_update(
+                  self.config.stt_engine, detected.nvidia_driver,
+                  detected.cuda_driver)):
+            self.bridge.gpu_driver_update.emit()
         return LOADED
 
     def _stt_request(self) -> tuple[str, str, str]:
@@ -483,27 +493,39 @@ class CadentApp:
         toast points at a tray menu item, so a missed toast still leaves the
         offer reachable. The offer also drives amber — but only until the menu
         has been opened, so it can never become permanent scenery (§3.4)."""
-        self.tray.offer_gpu_pack()
+        self.tray.offer_gpu_pack(self._pack_size())
         self.tray.message(
             "Cadent — GPU detected",
             "Dictation is running on CPU, but this PC has an NVIDIA GPU. "
-            f"Pick 'Download GPU support pack' ({gpu_pack.DOWNLOAD_SIZE}, one-time) "
+            f"Pick 'Download GPU support pack' ({self._pack_size()}, one-time) "
             "from the tray menu to speed up transcription.",
             QSystemTrayIcon.MessageIcon.Information, 10_000)
 
-    def _on_gpu_download_clicked(self) -> None:
+    def _on_gpu_driver_update(self) -> None:
+        self.tray.show_driver_update(gpu_pack.DRIVER_UPDATE_NOTE)
+
+    def _pack_size(self) -> str:
+        return gpu_pack.download_size(self.config.stt_engine)
+
+    def _on_gpu_download_clicked(self, engine: str | None = None) -> None:
+        """`engine` is the wizard's: its page disclosed the edition of the
+        engine it is about to recommend, not the one config.json still names."""
+        edition = gpu_pack.edition_for(engine or self.config.stt_engine)
+        if edition is None:
+            return
         self.tray.gpu_action.setEnabled(False)
         self.tray.message(
             "Cadent — one-time GPU support pack download",
-            f"Downloading NVIDIA cuBLAS ({gpu_pack.DOWNLOAD_SIZE}) from PyPI. "
+            f"Downloading {edition.what} ({edition.size}) from PyPI. "
             "This is the only network activity Cadent performs. "
             "Dictation keeps working on CPU until it finishes.",
             QSystemTrayIcon.MessageIcon.Information, 10_000)
-        threading.Thread(target=self._install_gpu_pack, daemon=True).start()
+        threading.Thread(target=self._install_gpu_pack, args=(edition,),
+                         daemon=True).start()
 
-    def _install_gpu_pack(self) -> None:
+    def _install_gpu_pack(self, edition: gpu_pack.Edition) -> None:
         try:
-            gpu_pack.install_pack()
+            gpu_pack.install_pack(edition)
         except Exception as exc:
             log.exception("GPU support pack install failed")
             self.bridge.gpu_installed.emit(str(exc))
@@ -523,8 +545,8 @@ class CadentApp:
         self.tray.message(
             "Cadent", "GPU support pack ready — restarting the speech engine on GPU.",
             QSystemTrayIcon.MessageIcon.Information, 4_000)
-        # install_pack prepended the pack dir to PATH, so the reload's CUDA
-        # probe can find cuBLAS now. Detach-then-reload, #38 pattern.
+        # install_pack activated the edition (PATH or preload), so the reload's
+        # CUDA probe can find the libraries now. Detach-then-reload, #38 pattern.
         self._stt = None
         threading.Thread(target=self._load_stt, daemon=True).start()
 

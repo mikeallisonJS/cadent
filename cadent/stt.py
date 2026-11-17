@@ -144,6 +144,10 @@ def _provider_ladder(device: str, runtimes: tuple[str, ...]) -> tuple[str, ...]:
     rung either: that EP crashes on Parakeet (microsoft/onnxruntime#26355).
     CPU always closes the ladder."""
     ladder = _PROVIDER_LADDERS.get(device, _PROVIDER_LADDERS["auto"])
+    if device == "auto" and "directml" not in runtimes:
+        # No DirectML to lead: `auto` reaches for CUDA itself (Linux, ADR
+        # 0010) and the landed rung is read back off the session.
+        ladder = ("CUDAExecutionProvider", "CPUExecutionProvider")
     return tuple(p for p in ladder
                  if p == "CPUExecutionProvider" or _RUNTIME_NAMES[p] in runtimes)
 

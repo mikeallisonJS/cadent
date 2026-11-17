@@ -516,6 +516,9 @@ class DarwinHardware:
     def nvidia_driver_present(self) -> bool:
         return False
 
+    def cuda_driver_version(self) -> int | None:
+        return None
+
     def metal_gpu_present(self) -> bool:
         return True
 

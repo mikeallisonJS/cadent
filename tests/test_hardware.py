@@ -178,7 +178,8 @@ def test_detection_is_probed_once_and_cached(machine):
     hardware.reset_cache()
 
 
-def test_the_gpu_pack_page_is_offered_when_the_driver_is_there_but_unused():
+def test_the_gpu_pack_page_is_offered_when_the_driver_is_there_but_unused(
+        pinned_win32_facts):
     """If the driver is present, VRAM >= 4 GB and the pack isn't installed,
     the pack page comes *before* the model page — accepting it changes the
     recommendation (§6.2)."""
@@ -192,7 +193,8 @@ def test_the_gpu_pack_page_is_offered_when_the_driver_is_there_but_unused():
                                           pack_installed=False) is False
 
 
-def test_the_gpu_pack_page_is_skipped_when_parakeet_is_what_we_will_suggest():
+def test_the_gpu_pack_page_is_skipped_when_parakeet_is_what_we_will_suggest(
+        pinned_win32_facts):
     """The page exists because accepting the pack changes the recommendation.
     It changes nothing for a machine about to be recommended Parakeet, which
     never loads a cuBLAS DLL — so asking for 550 MB there is the same placebo

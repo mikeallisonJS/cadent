@@ -438,7 +438,8 @@ class FakeHotkeyTap:
 
 class FakeHardwareProbe:
     def __init__(self, *, vram=None, dx12=False, cpu="Test CPU", driver=False,
-                 metal=False):
+                 metal=False, cuda_driver=None):
+        self.cuda_driver = cuda_driver
         self.vram = vram
         self.dx12 = dx12
         self.cpu = cpu
@@ -458,6 +459,9 @@ class FakeHardwareProbe:
 
     def nvidia_driver_present(self):
         return self.driver
+
+    def cuda_driver_version(self):
+        return self.cuda_driver
 
     def metal_gpu_present(self):
         return self.metal
@@ -644,9 +648,9 @@ def machine(monkeypatch):
     import cadent.platform as platform_pkg
 
     def set_machine(*, vram=None, dx12=False, cpu="Test CPU", driver=False,
-                    metal=False):
+                    metal=False, cuda_driver=None):
         probe = FakeHardwareProbe(vram=vram, dx12=dx12, cpu=cpu, driver=driver,
-                                  metal=metal)
+                                  metal=metal, cuda_driver=cuda_driver)
         plat = dataclasses.replace(platform_pkg.current(), hardware=probe)
         monkeypatch.setattr(platform_pkg, "_current", plat)
         return probe
