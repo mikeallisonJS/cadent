@@ -609,7 +609,7 @@ def test_accepting_the_gpu_pack_actually_installs_it(qt_app, tmp_path, monkeypat
     monkeypatch.setattr(hardware, "any_speech_model_downloaded", lambda _d: False)
     installs = []
     win = SetupWizard(ConfigStore(tmp_path / "config.json"),
-                      install_gpu_pack=lambda: installs.append(1))
+                      install_gpu_pack=lambda engine=None: installs.append(1))
     win.state.gpu_eligible = True
     win._index = win.state.pages().index(GPU)
     win._render()
@@ -624,7 +624,7 @@ def test_declining_the_gpu_pack_installs_nothing(qt_app, tmp_path, monkeypatch):
     monkeypatch.setattr(hardware, "any_speech_model_downloaded", lambda _d: False)
     installs = []
     win = SetupWizard(ConfigStore(tmp_path / "config.json"),
-                      install_gpu_pack=lambda: installs.append(1))
+                      install_gpu_pack=lambda engine=None: installs.append(1))
     win.state.gpu_eligible = True
     win._index = win.state.pages().index(GPU)
     win._render()
