@@ -18,6 +18,7 @@ _spec.loader.exec_module(build)
 
 if sys.platform == "win32":
     pytest.skip("Linux adapter internals", allow_module_level=True)
+pytest.importorskip("jeepney")
 
 from cadent.platform.linux import autostart, desktop_files, identity  # noqa: E402
 from cadent.platform.linux.instance import FlockSingleInstance  # noqa: E402
