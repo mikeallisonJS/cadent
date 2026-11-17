@@ -10,8 +10,8 @@ argument-hint: "[pr] [auto=true|false]"
 Fetch PR review comments, triage them (fix, challenge, or skip), apply holistic fixes, resolve threads, and post a summary.
 
 <!-- sync: canonical version at JesusFilm/core:.claude/commands/handle-pr-review.md — keep triage categories and the summary comment step aligned when upstream changes. -->
-<!-- Vendored from JesusFilm/youtube-studio and repointed at this repo: default
-     owner/repo, the tooling in §5, and commit discipline are cadent's. Not
+<!-- Vendored from JesusFilm/youtube-studio, last synced from JesusFilm/phoebe
+     (bf22158): the tooling in §5 and commit discipline are cadent's. Not
      managed by skills-lock.json (that tracks the mattpocock/skills set), so a
      skills sync will not update it — re-pull by hand when upstream moves. -->
 
@@ -22,7 +22,7 @@ Fetch PR review comments, triage them (fix, challenge, or skip), apply holistic 
 
 ## Repository
 
-Default owner/repo is **`mikeallisonJS/cadent`**. Infer from `git remote -v` when run inside a clone (`gh` does this automatically for most commands). Use the base repo's `owner`/`name` in GraphQL and REST API calls (works across forks).
+Infer owner/repo from `git remote -v` (`gh` does this automatically for most commands). Use the base repo's `owner`/`name` in GraphQL and REST API calls (works across forks).
 
 ---
 
@@ -88,7 +88,7 @@ gh api graphql -f query='
         }
       }
     }
-  }' -f owner=mikeallisonJS -f repo=cadent -F pr=NUMBER
+  }' -f owner=OWNER -f repo=REPO -F pr=NUMBER
 ```
 
 **Post-fetch processing:**
@@ -160,7 +160,7 @@ the autonomous cycle completes.
 
 ## 4. Analyse holistically before changing code
 
-**Critical: do not fix comments one-by-one in isolation.**
+Plan the fixes as one set before changing any code.
 
 - Read all files touched by "Fix" threads. Understand the broader context.
 - Identify dependencies between comments (e.g. a rename in file A affects an import in file B).
@@ -242,14 +242,14 @@ If `viewerCanResolve` was `false` for a thread, note it in the summary and move 
 For each "Challenge" thread, reply inline using the **numeric database ID** (`databaseId` from step 2):
 
 ```bash
-gh api repos/mikeallisonJS/cadent/pulls/PR/comments/DATABASE_ID/replies \
+gh api repos/OWNER/REPO/pulls/PR/comments/DATABASE_ID/replies \
   -f body="Your reply here"
 ```
 
 If the thread is a top-level review comment (not an inline diff comment), fall back to:
 
 ```bash
-gh api repos/mikeallisonJS/cadent/issues/PR/comments -f body="Your reply here"
+gh api repos/OWNER/REPO/issues/PR/comments -f body="Your reply here"
 ```
 
 ## 10. Post summary comment
