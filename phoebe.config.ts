@@ -31,6 +31,28 @@ const config = {
     "uv run ruff check . && QT_QPA_PLATFORM=offscreen uv run pytest",
   defaultProvider: "claude",
   providerEnv: { claude: "ANTHROPIC_AUTH_TOKEN" },
+
+  // Phoebe's dependency bot (engine v0.17.0+, docs/configuration.md, "The
+  // dependency kinds"), on a pipeline of its own beside the default `work`
+  // one. `dependency-updates` files a daily issue per bundle of outdated
+  // packages, `dependency-security` files severe advisories, and
+  // `dependencies` works those issues into PRs. Their tickets wear
+  // `phoebe:dependencies`, never `ready-for-agent`, so `work` never takes
+  // one. Security scans every 6h instead of hourly: each scan includes an
+  // agent run, and the workspace runs it for every tenant.
+  pipelines: {
+    dependencies: {
+      pollIntervalMs: 600_000,
+      kinds: {
+        "dependency-updates": { path: "phoebe-agent/kinds/dependency-updates" },
+        "dependency-security": {
+          path: "phoebe-agent/kinds/dependency-security",
+          every: "6h",
+        },
+        dependencies: { path: "phoebe-agent/kinds/dependencies-work" },
+      },
+    },
+  },
 };
 
 export default config;
