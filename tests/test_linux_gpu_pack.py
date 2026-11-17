@@ -11,8 +11,11 @@ from conftest import make_platform
 
 from cadent import gpu_pack, hardware, stt
 from cadent import platform as platform_pkg
-from cadent.platform import linux
-from cadent.platform.linux.hardware import ProcHardware
+
+pytest.importorskip("jeepney")  # the linux package imports it; Linux-only dependency
+
+from cadent.platform import linux  # noqa: E402
+from cadent.platform.linux.hardware import ProcHardware  # noqa: E402
 
 WHISPER = gpu_pack.EDITIONS["cublas-linux"]
 PARAKEET = gpu_pack.EDITIONS["cuda13-linux"]
