@@ -14,15 +14,21 @@ visible and enabled, so it reads as a heading and cannot be landed on.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, Signal
+from collections.abc import Callable
+
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QHBoxLayout,
     QListWidget,
     QListWidgetItem,
+    QPushButton,
     QScrollArea,
+    QSizePolicy,
     QStackedWidget,
+    QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
 )
@@ -116,6 +122,9 @@ class SettingsWindow(QDialog):
     theme_requested = Signal(str)
     move_overlay_requested = Signal()
     wizard_requested = Signal()
+    # The tray-less footer's two controls (§10.2).
+    pause_requested = Signal(bool)
+    quit_requested = Signal()
     # The Speech pane's download controls. Re-emitted rather than reached for
     # through `window.speech`, so app.py keeps talking to the window it holds
     # and the pane stays a detail of it.
@@ -125,7 +134,8 @@ class SettingsWindow(QDialog):
     def __init__(self, store: ConfigStore, *, tokens: dict,
                  devices: list[str] | None = None, history=None,
                  high_contrast: bool = False, mic_monitor=None,
-                 capture_keys=None, parent=None) -> None:
+                 capture_keys=None, tray_available: Callable[[], bool] | None = None,
+                 parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("Root")
         self.setWindowTitle("Cadent — Settings")
@@ -222,6 +232,32 @@ class SettingsWindow(QDialog):
         self.set_permission_missing(
             permission is not None and not plat.focused_app.permission_granted())
         body.addWidget(self.stack, 1)
+
+        # Pause and Quit for a desktop with no tray host. Shown only while
+        # none exists; polled because a host can appear mid-session.
+        self._tray_available = tray_available or QSystemTrayIcon.isSystemTrayAvailable
+        self.footer = QWidget()
+        self.footer.setObjectName("Footer")
+        # Never the widest thing in the window: at 225% text its minimum would
+        # otherwise squeeze the nav rail into ellipsis (§8.5).
+        self.footer.setSizePolicy(QSizePolicy.Policy.Ignored,
+                                  QSizePolicy.Policy.Preferred)
+        footer_row = QHBoxLayout(self.footer)
+        footer_row.setContentsMargins(int(tokens["sp_6"]), int(tokens["sp_3"]),
+                                      int(tokens["sp_6"]), int(tokens["sp_3"]))
+        self.pause_box = QCheckBox("Pause dictation")
+        self.pause_box.setChecked(store.config.paused)
+        self.pause_box.toggled.connect(self.pause_requested)
+        self.quit_button = QPushButton("Quit Cadent")
+        self.quit_button.clicked.connect(self.quit_requested)
+        footer_row.addWidget(self.pause_box)
+        footer_row.addStretch()
+        footer_row.addWidget(self.quit_button)
+        body.addWidget(self.footer)
+        self._tray_timer = QTimer(self)
+        self._tray_timer.setInterval(2000)
+        self._tray_timer.timeout.connect(self.refresh_tray)
+        self.refresh_tray()
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -328,6 +364,16 @@ class SettingsWindow(QDialog):
         self.permission_banner.setVisible(
             missing and platform.current().capabilities.permission is not None)
 
+    def refresh_tray(self) -> None:
+        """Footer and General row follow whether a tray host exists *now*."""
+        missing = not self._tray_available()
+        self.footer.setVisible(missing)
+        self.general.set_tray_missing(missing)
+        if missing:
+            self.pause_box.blockSignals(True)
+            self.pause_box.setChecked(self.store.config.paused)
+            self.pause_box.blockSignals(False)
+
     def _open_config(self) -> None:
         open_in_explorer(self.store.path)
 
@@ -341,12 +387,15 @@ class SettingsWindow(QDialog):
 
     def showEvent(self, event) -> None:  # noqa: N802 (Qt naming)
         super().showEvent(event)
+        self.refresh_tray()
+        self._tray_timer.start()
         self._sync_microphone()
 
     def hideEvent(self, event) -> None:  # noqa: N802
         # Hidden is this window's common resting state, not an edge case: the
         # app keeps the instance around and re-shows it from the tray.
         self.general.stop_monitoring()
+        self._tray_timer.stop()
         super().hideEvent(event)
 
     def closeEvent(self, event) -> None:  # noqa: N802

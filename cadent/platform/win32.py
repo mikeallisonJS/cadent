@@ -411,6 +411,9 @@ class Win32SingleInstance:
         ctypes.windll.kernel32.CreateMutexW(None, False, _MUTEX_NAME)
         return ctypes.windll.kernel32.GetLastError() != ERROR_ALREADY_EXISTS
 
+    def serve_second_launch(self, on_launch: Callable[[], None]) -> None:
+        pass
+
 
 # ---- desktop environment ------------------------------------------------------
 
