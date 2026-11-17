@@ -47,6 +47,8 @@ class PortalDesktop(fallback.NullDesktop):
         self._values: Snapshot = {}
         self._loaded = False
         self._lock = threading.Lock()
+        self._changes = threading.Lock()
+        self._pending: list[tuple[str, str, object]] | None = None
         self._unsubscribe: Callable[[], None] | None = None
         self._on_ink_change: Callable[[], None] | None = None
 
@@ -60,12 +62,22 @@ class PortalDesktop(fallback.NullDesktop):
             return self._values
 
     def _load(self) -> None:
+        # Changes that land while ReadAll is in flight are newer than its
+        # reply, so they are held and replayed over it.
+        with self._changes:
+            self._pending = []
         try:
             self._subscribe()
-            self._values.update(snapshot_from(
-                self._portal.call(read_all_message(NAMESPACES))))
+            loaded = snapshot_from(
+                self._portal.call(read_all_message(NAMESPACES)))
         except PortalError as exc:
             log.info("no settings snapshot, using fallback answers: %s", exc)
+            loaded = {}
+        with self._changes:
+            self._values.update(loaded)
+            for namespace, key, value in self._pending or []:
+                self._values[(namespace, key)] = value
+            self._pending = None
 
     def _subscribe(self) -> None:
         if self._unsubscribe is None:
@@ -74,7 +86,11 @@ class PortalDesktop(fallback.NullDesktop):
 
     def _on_changed(self, msg: Message) -> None:
         namespace, key, value = msg.body
-        self._values[(namespace, key)] = value[1]
+        with self._changes:
+            if self._pending is not None:
+                self._pending.append((namespace, key, value[1]))
+            else:
+                self._values[(namespace, key)] = value[1]
         if (namespace, key) == (APPEARANCE, "color-scheme") \
                 and self._on_ink_change is not None:
             self._on_ink_change()

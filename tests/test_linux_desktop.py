@@ -72,6 +72,20 @@ def test_a_scheme_flip_repaints_the_mark():
     assert seen == ["#000000"] and env.high_contrast()
 
 
+def test_a_change_during_the_snapshot_read_wins():
+    portal = FakePortal(scheme(1))
+    env = D.PortalDesktop(portal)
+    call = portal.call
+
+    def call_with_change(message, timeout=5.0):
+        reply = call(message, timeout)
+        portal.change(D.APPEARANCE, "color-scheme", 2)
+        return reply
+
+    portal.call = call_with_change
+    assert env.tray_ink() == "#000000"
+
+
 def test_snapshot_values():
     env, _ = make(body(**{
         D.GNOME_INTERFACE: {"text-scaling-factor": 1.5,
@@ -117,3 +131,14 @@ def test_a_knock_with_nobody_home_is_harmless(tmp_path):
     assert held.acquire()
     other = LinuxSingleInstance(tmp_path / "c.lock", tmp_path / "none.sock")
     assert not other.acquire()
+
+
+def test_a_knock_before_the_listener_is_registered_is_delivered(tmp_path):
+    first = LinuxSingleInstance(tmp_path / "c.lock", tmp_path / "c.sock")
+    second = LinuxSingleInstance(tmp_path / "c.lock", tmp_path / "c.sock")
+    knocked = threading.Event()
+    assert first.acquire()
+    assert not second.acquire()
+    first.serve_second_launch(knocked.set)
+    assert knocked.wait(2)
+    first._server.close()

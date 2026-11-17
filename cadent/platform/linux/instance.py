@@ -40,6 +40,7 @@ class LinuxSingleInstance:
             self._knock()
             return False
         self._fd = fd
+        self._listen()
         return True
 
     def _knock(self) -> None:
@@ -51,18 +52,25 @@ class LinuxSingleInstance:
         except OSError:
             log.debug("no running Cadent answered the knock", exc_info=True)
 
-    def serve_second_launch(self, on_launch: Callable[[], None]) -> None:
+    def _listen(self) -> None:
+        """Bind with the lock, so a knock that beats `serve_second_launch`
+        waits in the backlog instead of being lost."""
         # Holding the lock makes any socket file left here stale.
         self._socket_path.unlink(missing_ok=True)
         server = socket.socket(socket.AF_UNIX)
         try:
             server.bind(str(self._socket_path))
+            server.listen(4)
         except OSError:
             log.warning("cannot listen for a second launch", exc_info=True)
             server.close()
             return
-        server.listen(1)
         self._server = server
+
+    def serve_second_launch(self, on_launch: Callable[[], None]) -> None:
+        server = self._server
+        if server is None:
+            return
         threading.Thread(target=self._serve, args=(server, on_launch),
                          name="cadent-second-launch", daemon=True).start()
 
