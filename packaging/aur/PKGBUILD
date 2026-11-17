@@ -1,0 +1,63 @@
+# Maintainer: Mike Allison
+#
+# cadent-bin: repacks the released tarball (cadent-<version>-x86_64.tar.zst,
+# built by .github/workflows/build-installer-linux.yml). Checked in here and
+# pushed to aur.archlinux.org by hand — no workflow of ours can own that repo.
+# Bump pkgver, then `updpkgsums`.
+#
+# This package is authoritative for the desktop entry: it installs one
+# system-wide, which is exactly what makes Cadent skip writing its own on first
+# run (spec m6 §8.3).
+
+pkgname=cadent-bin
+pkgver=0.0.0
+pkgrel=1
+pkgdesc='Local push-to-talk dictation that types into any app'
+arch=('x86_64')
+url='https://github.com/mikeallisonJS/cadent'
+license=('MIT')
+# alsa-lib is the host's on purpose: it dlopens plugins against the host
+# config, so the bundle ships none.
+depends=('alsa-lib')
+optdepends=('pipewire-alsa: route the microphone through PipeWire'
+            'vulkan-icd-loader: run text cleanup on the GPU')
+provides=('cadent')
+conflicts=('cadent')
+options=('!strip' '!debug')
+source=("$pkgname-$pkgver.tar.zst::$url/releases/download/v$pkgver/cadent-$pkgver-x86_64.tar.zst"
+        "$pkgname-$pkgver-LICENSE::https://raw.githubusercontent.com/mikeallisonJS/cadent/v$pkgver/LICENSE")
+sha256sums=('SKIP' 'SKIP')
+noextract=("$pkgname-$pkgver.tar.zst")
+
+prepare() {
+  mkdir -p "$srcdir/cadent"
+  bsdtar -xf "$srcdir/$pkgname-$pkgver.tar.zst" -C "$srcdir/cadent" --strip-components=1
+}
+
+package() {
+  install -dm755 "$pkgdir/opt/cadent"
+  cp -a "$srcdir/cadent/." "$pkgdir/opt/cadent/"
+  install -dm755 "$pkgdir/usr/bin"
+  ln -s /opt/cadent/Cadent "$pkgdir/usr/bin/cadent"
+
+  install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/com.mikeallisonjs.cadent.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Cadent
+Comment=Local push-to-talk dictation
+Exec=/opt/cadent/Cadent
+Icon=com.mikeallisonjs.cadent
+Terminal=false
+Categories=Utility;AudioVideo;
+StartupWMClass=com.mikeallisonjs.cadent
+EOF
+
+  local size
+  for size in 48 128 256; do
+    install -Dm644 "$srcdir/cadent/_internal/icons/png/cadent-$size.png" \
+      "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/com.mikeallisonjs.cadent.png"
+  done
+
+  install -Dm644 "$srcdir/$pkgname-$pkgver-LICENSE" \
+    "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

@@ -125,6 +125,11 @@ class CadentApp:
 
         self.qt = QApplication(sys.argv)
         self.qt.setQuitOnLastWindowClosed(False)
+        # The launcher id Qt names windows by (Wayland app_id), then the
+        # desktop entry that id resolves to; both before the first window.
+        if self.platform.capabilities.desktop_file_name:
+            self.qt.setDesktopFileName(self.platform.capabilities.desktop_file_name)
+        self.platform.desktop.register_identity()
         # One mark for every window, the taskbar and Alt-Tab (#73).
         self.qt.setWindowIcon(icons.app_icon())
         # The design language, before any window exists. Windows' Text size

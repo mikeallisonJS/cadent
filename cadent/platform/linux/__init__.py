@@ -18,7 +18,8 @@ from ... import config
 from .. import fallback
 from ..base import Capabilities, PermissionPreflight, Platform
 from ..keycodes import LINUX_KEYCODES
-from . import datacontrol, vkeyboard, wayland, wlclient
+from . import datacontrol, identity, vkeyboard, wayland, wlclient
+from .autostart import XdgAutostart
 from .desktop import PortalDesktop
 from .desktop_files import DesktopIndex
 from .hardware import ProcHardware
@@ -210,6 +211,7 @@ def capabilities_for(session: Session, *, hotkey_available: bool = True,
         hotkey_available=hotkey_available,
         hotkey_note=note,
         paste_note=None if whole or paste_available else NO_PASTE_NOTE,
+        desktop_file_name=identity.APP_ID,
     )
 
 
@@ -344,12 +346,14 @@ class LinuxHardware(_PortalAdapter, ProcHardware):
         _PortalAdapter.__init__(self, portal)
         ProcHardware.__init__(self)
 
-class LinuxAutostart(_PortalAdapter, fallback.NullAutostart): ...
 class LinuxDesktop(PortalDesktop):
     def __init__(self, portal: Portal, grants: PortalInput | None = None,
                  desktops: tuple[str, ...] = ()) -> None:
         super().__init__(portal, desktops)
         self._grants = grants
+
+    def register_identity(self) -> None:
+        identity.register()
 
     def request_permission(self) -> None:
         if self._grants is not None:
@@ -377,7 +381,7 @@ def create(env: Mapping[str, str] | None = None,
             focused_app=x11.X11FocusedApp(),
             hotkey_tap=x11.X11HotkeyTap(gate),
             hardware=LinuxHardware(portal),
-            autostart=LinuxAutostart(portal),
+            autostart=XdgAutostart(),
             single_instance=LinuxSingleInstance(),
             desktop=LinuxDesktop(portal, desktops=session.desktops),
         )
@@ -417,7 +421,7 @@ def _assemble(caps: Capabilities, portal: Portal, grants: PortalInput | None = N
         focused_app=LinuxFocusedApp(portal, grants, windows),
         hotkey_tap=LinuxHotkeyTap(portal, grants),
         hardware=LinuxHardware(portal),
-        autostart=LinuxAutostart(portal),
+        autostart=XdgAutostart(),
         single_instance=LinuxSingleInstance(),
         desktop=LinuxDesktop(portal, grants, desktops),
     )

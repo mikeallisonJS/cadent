@@ -157,6 +157,9 @@ ACCESSIBILITY_PERMISSION = PermissionPreflight(
 
 
 class DarwinDesktop:
+    def register_identity(self) -> None:
+        pass
+
     def open_path(self, path: Path) -> None:
         try:
             subprocess.Popen(["open", str(path)])  # associated app, not a Finder reveal
