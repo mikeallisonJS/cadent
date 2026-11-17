@@ -486,6 +486,9 @@ class FakeDesktop:
     def request_permission(self):
         self.permission_settings_opens += 1
 
+    def register_identity(self):
+        pass
+
     def text_scale_factor(self):
         return 1.0
 

@@ -66,15 +66,21 @@ jobs:
         run: uv run python scripts/build.py --skip-sync
 
       - name: Fetch appimagetool
+        env:
+          APPIMAGETOOL_TAG: 1.9.1
+          APPIMAGETOOL_SHA256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
         run: |
           curl -fsSL -o "$RUNNER_TEMP/appimagetool" \
-            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+            "https://github.com/AppImage/appimagetool/releases/download/$APPIMAGETOOL_TAG/appimagetool-x86_64.AppImage"
+          echo "$APPIMAGETOOL_SHA256  $RUNNER_TEMP/appimagetool" | sha256sum -c -
           chmod +x "$RUNNER_TEMP/appimagetool"
 
       - name: Package the tarball and AppImage
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           uv run python scripts/build_linux.py \
-            --version ${{ steps.version.outputs.version }} \
+            --version "$VERSION" \
             --appimagetool "$RUNNER_TEMP/appimagetool"
 
       - uses: actions/upload-artifact@v4

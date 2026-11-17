@@ -16,9 +16,8 @@ _spec = importlib.util.spec_from_file_location("build_script", ROOT / "scripts" 
 build = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(build)
 
-if sys.platform == "win32":
+if sys.platform != "linux":
     pytest.skip("Linux adapter internals", allow_module_level=True)
-pytest.importorskip("jeepney")
 
 from cadent.platform.linux import autostart, desktop_files, identity  # noqa: E402
 from cadent.platform.linux.instance import LinuxSingleInstance  # noqa: E402
@@ -116,6 +115,33 @@ def test_appimage_path_wins_over_the_ephemeral_mount(tmp_path):
 
 def test_paths_with_spaces_are_quoted():
     assert identity.quote("/home/me/My Apps/Cadent") == '"/home/me/My Apps/Cadent"'
+
+
+def test_percent_in_a_plain_path_is_escaped():
+    assert identity.quote("/home/me/%Z/Cadent") == "/home/me/%%Z/Cadent"
+
+
+def test_a_system_entry_removes_the_entry_we_generated(tmp_path):
+    env = _env(tmp_path)
+    identity.install(env, "/opt/cadent/Cadent")
+    mine = tmp_path / "data" / "applications" / "com.mikeallisonjs.cadent.desktop"
+    system = tmp_path / "system" / "applications"
+    system.mkdir(parents=True)
+    (system / "com.mikeallisonjs.cadent.desktop").write_text("[Desktop Entry]\n")
+    assert identity.install(env, "/opt/cadent/Cadent") is False
+    assert not mine.exists()
+
+
+def test_a_system_entry_leaves_a_customised_user_entry(tmp_path):
+    env = _env(tmp_path)
+    identity.install(env, "/opt/cadent/Cadent")
+    mine = tmp_path / "data" / "applications" / "com.mikeallisonjs.cadent.desktop"
+    mine.write_text(mine.read_text() + "Keywords=dictation\n")
+    system = tmp_path / "system" / "applications"
+    system.mkdir(parents=True)
+    (system / "com.mikeallisonjs.cadent.desktop").write_text("[Desktop Entry]\n")
+    identity.install(env, "/opt/cadent/Cadent")
+    assert mine.exists()
 
 
 # ---- autostart -----------------------------------------------------------------

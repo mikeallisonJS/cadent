@@ -64,10 +64,11 @@ def quote(path: str) -> str:
     """A path as one `Exec=` argument: desktop entries expand no variables,
     and a space or reserved character needs double quotes (Desktop Entry
     spec, "The Exec key")."""
+    path = path.replace("%", "%%")
     if not any(c in path for c in ' \t\n"\'\\><~|&;$*?#()`'):
         return path
     escaped = "".join("\\" + c if c in '"`$\\' else c for c in path)
-    return f'"{escaped}"'.replace("%", "%%")
+    return f'"{escaped}"'
 
 
 def launcher_path(env: Mapping[str, str], executable: str) -> str:
@@ -78,13 +79,28 @@ def launcher_path(env: Mapping[str, str], executable: str) -> str:
     return str(Path(appimage).absolute()) if appimage else executable
 
 
+def _drop_generated_entry(entry: Path) -> None:
+    """Remove a user entry we wrote earlier, so the system one shows through.
+    Only a file whose `Exec=` is one Cadent would have generated: a hand-edited
+    entry is left alone."""
+    try:
+        lines = entry.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    template = entry_text("").splitlines()
+    shape = [line for line in lines if not line.startswith("Exec=")]
+    if shape == [line for line in template if not line.startswith("Exec=")]:
+        entry.unlink(missing_ok=True)
+
+
 def install(env: Mapping[str, str], executable: str,
             icon_source: Path | None = None) -> bool:
     """Write the desktop entry and hicolor PNGs, idempotently. Returns False
     when a system-wide entry exists and nothing was written."""
-    if system_entry_exists(env):
-        return False
     home = data_home(env)
+    if system_entry_exists(env):
+        _drop_generated_entry(home / "applications" / f"{APP_ID}.desktop")
+        return False
     source = icon_source or icons_dir() / "png"
     for size in ICON_SIZES:
         target = (home / "icons" / "hicolor" / f"{size}x{size}" / "apps"
