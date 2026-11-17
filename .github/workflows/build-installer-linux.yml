@@ -1,0 +1,98 @@
+# Build the Linux artefacts (M6 spec §8, ADR 0011): a .tar.zst and an AppImage
+# from one scripts/build_linux.py, off a single PyInstaller onedir.
+#
+# Runs on version-tag push (v*) and by hand, like the other platform legs; the
+# legs are independent, so a failure here still ships Windows and macOS.
+#
+# ubuntu-24.04 is pinned by name, mirroring macos-15 — it is what sets the
+# support floor at glibc 2.39 ("Ubuntu 24.04 LTS or newer, any rolling
+# distro"). `ubuntu-latest` would move the floor by itself.
+#
+# No signing. The AUR package (packaging/aur/PKGBUILD) repacks the tarball and
+# is pushed to aur.archlinux.org by hand.
+
+name: build-installer-linux
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # gh release upload on tag builds
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    # Every step that runs uv must leave the environment alone: the GPU
+    # onnxruntime is swapped in below, and a syncing `uv run` would put the
+    # CPU one back.
+    env:
+      UV_NO_SYNC: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Determine version
+        id: version
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/v*) version="${GITHUB_REF_NAME#v}" ;;
+            *)            version="0.0.0" ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install system packages
+        # libportaudio2 is staged into the bundle by the spec; zstd packs the
+        # tarball. libasound2 is deliberately not bundled — the host's.
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2 zstd
+
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras
+          # faster-whisper asks for `onnxruntime`; the Linux build ships the
+          # GPU distribution, which provides the same package plus the CUDA
+          # provider Parakeet needs (spec §6.2). Both installed means
+          # whichever lands last wins, so remove the CPU one first.
+          uv pip uninstall onnxruntime
+          uv pip install "onnxruntime-gpu>=1.28"
+
+      - name: Build frozen app (PyInstaller onedir)
+        env:
+          CADENT_VERSION: ${{ steps.version.outputs.version }}
+        run: uv run python scripts/build.py --skip-sync
+
+      - name: Fetch appimagetool
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+
+      - name: Package the tarball and AppImage
+        run: |
+          uv run python scripts/build_linux.py \
+            --version ${{ steps.version.outputs.version }} \
+            --appimagetool "$RUNNER_TEMP/appimagetool"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cadent-${{ steps.version.outputs.version }}-linux-x86_64
+          path: |
+            dist/installer/*.AppImage
+            dist/installer/*.tar.zst
+          if-no-files-found: error
+
+      - name: Attach the artefacts to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # tag-release.yml publishes the release before dispatching the
+          # platform builds; create is a no-op we ignore and upload is the
+          # step that matters.
+          gh release create "$GITHUB_REF_NAME" --generate-notes || echo "release exists"
+          gh release upload "$GITHUB_REF_NAME" \
+            dist/installer/*.AppImage dist/installer/*.tar.zst --clobber

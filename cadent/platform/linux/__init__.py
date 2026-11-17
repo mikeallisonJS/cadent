@@ -18,7 +18,8 @@ from ... import config
 from .. import fallback
 from ..base import Capabilities, PermissionPreflight, Platform
 from ..keycodes import LINUX_KEYCODES
-from . import datacontrol, vkeyboard, wayland, wlclient
+from . import datacontrol, identity, vkeyboard, wayland, wlclient
+from .autostart import XdgAutostart
 from .desktop_files import DesktopIndex
 from .input import (
     CLEANUP,
@@ -29,6 +30,7 @@ from .input import (
     keys_for,
     keysym_for,
 )
+from .instance import FlockSingleInstance
 from .portal import CLIPBOARD, GLOBAL_SHORTCUTS, Portal
 from .portalclip import PortalClipboard
 
@@ -204,6 +206,7 @@ def capabilities_for(session: Session, *, hotkey_available: bool = True,
         hotkey_available=hotkey_available,
         hotkey_note=note,
         paste_note=None if whole or paste_available else NO_PASTE_NOTE,
+        desktop_file_name=identity.APP_ID,
     )
 
 
@@ -334,12 +337,13 @@ class LinuxHotkeyTap(_PortalAdapter, fallback.NullHotkeyTap):
 
 
 class LinuxHardware(_PortalAdapter, fallback.NullHardware): ...
-class LinuxAutostart(_PortalAdapter, fallback.NullAutostart): ...
-class LinuxSingleInstance(_PortalAdapter, fallback.NullSingleInstance): ...
 class LinuxDesktop(_PortalAdapter, fallback.NullDesktop):
     def __init__(self, portal: Portal, grants: PortalInput | None = None) -> None:
         super().__init__(portal)
         self._grants = grants
+
+    def register_identity(self) -> None:
+        identity.register()
 
     def request_permission(self) -> None:
         if self._grants is not None:
@@ -367,8 +371,8 @@ def create(env: Mapping[str, str] | None = None,
             focused_app=x11.X11FocusedApp(),
             hotkey_tap=x11.X11HotkeyTap(gate),
             hardware=LinuxHardware(portal),
-            autostart=LinuxAutostart(portal),
-            single_instance=LinuxSingleInstance(portal),
+            autostart=XdgAutostart(),
+            single_instance=FlockSingleInstance(),
             desktop=LinuxDesktop(portal),
         )
     # The Wayland tiers probe the compositor and the portals once; the answers
@@ -406,7 +410,7 @@ def _assemble(caps: Capabilities, portal: Portal, grants: PortalInput | None = N
         focused_app=LinuxFocusedApp(portal, grants, windows),
         hotkey_tap=LinuxHotkeyTap(portal, grants),
         hardware=LinuxHardware(portal),
-        autostart=LinuxAutostart(portal),
-        single_instance=LinuxSingleInstance(portal),
+        autostart=XdgAutostart(),
+        single_instance=FlockSingleInstance(),
         desktop=LinuxDesktop(portal, grants),
     )

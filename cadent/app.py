@@ -71,6 +71,7 @@ class _Bridge(QObject):
     download_progress = Signal(str, object)    # what, Progress (#115)
     download_finished = Signal(str)            # what — however it ended
     tray_ink_changed = Signal()                # the taskbar's colour mode moved
+    second_launch = Signal()                   # another Cadent was started and refused
 
 
 class CadentApp:
@@ -125,6 +126,9 @@ class CadentApp:
         self.qt.setQuitOnLastWindowClosed(False)
         # One mark for every window, the taskbar and Alt-Tab (#73).
         self.qt.setWindowIcon(icons.app_icon())
+        if self.platform.capabilities.desktop_file_name:
+            self.qt.setDesktopFileName(self.platform.capabilities.desktop_file_name)
+        self.platform.desktop.register_identity()
         # The design language, before any window exists. Windows' Text size
         # setting is read once here and applied on this launch; no Qt
         # mechanism honours it and there is no watcher (M4 8.5).
@@ -193,6 +197,11 @@ class CadentApp:
                                               on_error=self.bridge.llm_failed.emit)
 
         self._setup_tray()
+        self.bridge.second_launch.connect(self._on_second_launch)
+        self.platform.single_instance.listen(self.bridge.second_launch.emit)
+        if self.config.autostart:
+            # Reading the entry heals a path left stale by a moved AppImage.
+            self.platform.autostart.is_enabled()
         self._start_permission_poll()
         self.tray.set_fault("hotkey-unavailable",
                             not self.platform.capabilities.hotkey_available)
@@ -1048,6 +1057,12 @@ class CadentApp:
         the recorder lets go before the commit that rebuilds it."""
         self.ptt.capture(on_event)
         return self.ptt.release_capture
+
+    def _on_second_launch(self) -> None:
+        """A refused second launch opens Settings where there is no tray to
+        reach it from (spec §10.2); with a tray the running icon is the door."""
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            self._show_settings()
 
     def _show_settings(self, pane: str | None = None) -> None:
         if self.settings_window is None or not self.settings_window.isVisible():

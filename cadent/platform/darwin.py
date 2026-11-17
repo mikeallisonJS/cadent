@@ -127,6 +127,9 @@ class DarwinSingleInstance:
         self._fd = fd
         return True
 
+    def listen(self, on_second_launch: Callable[[], None]) -> None:
+        pass
+
 
 # ---- desktop environment (spec §6.3) ------------------------------------------
 
@@ -154,6 +157,9 @@ ACCESSIBILITY_PERMISSION = PermissionPreflight(
 
 
 class DarwinDesktop:
+    def register_identity(self) -> None:
+        pass
+
     def open_path(self, path: Path) -> None:
         try:
             subprocess.Popen(["open", str(path)])  # associated app, not a Finder reveal

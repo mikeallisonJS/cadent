@@ -128,8 +128,14 @@ class NullSingleInstance:
     def acquire(self) -> bool:
         return True
 
+    def listen(self, on_second_launch: Callable[[], None]) -> None:
+        pass
+
 
 class NullDesktop:
+    def register_identity(self) -> None:
+        pass
+
     def open_path(self, path: Path) -> None:
         try:                             # pragma: no cover - dev convenience
             subprocess.Popen(["xdg-open", str(path)])
