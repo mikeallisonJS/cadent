@@ -1,1 +1,0 @@
-A restart hint in Settings no longer wraps beside the microphone or model list when the window is narrow or the system font is wide: the list shortens its own text first, and the full name stays in its tooltip.
