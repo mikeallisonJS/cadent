@@ -2,7 +2,7 @@
 
 Usage: python scripts/build.py [--skip-sync]
 
-Produces dist/Cadent/ on Windows and dist/Cadent.app on macOS (#171), per
+Produces dist/Cadent/ on Windows and Linux and dist/Cadent.app on macOS (#171), per
 packaging/cadent.spec, then verifies the load-bearing files the M3 packaging
 research (#40) identified are present — a build that passes here can still
 fail at runtime, so follow with scripts/smoke_frozen.py.
@@ -14,6 +14,7 @@ import argparse
 import os
 import subprocess
 import sys
+from collections.abc import Iterable
 from fnmatch import fnmatch
 from pathlib import Path
 
@@ -66,6 +67,43 @@ LOAD_BEARING = {
         "*/platforms/libqcocoa.dylib",                 # Qt can't start without
         "*/_sounddevice_data/portaudio-binaries/libportaudio*.dylib",
     ],
+    # Spec m6 §8.5. Globs against DIST-relative paths: PyInstaller's onedir
+    # puts everything under _internal/, and the versioned .so names are not
+    # facts worth pinning.
+    "linux": [
+        "Cadent",
+        "*/libctranslate2*.so*",                       # custom hook: STT engine
+        "*/llama_cpp/lib/libllama.so",                 # custom hook: ctypes-loaded
+        # The Vulkan backend: llama.cpp finds its backends by scanning lib/, so
+        # losing this one is silent — cleanup still answers, on the processor.
+        "*/llama_cpp/lib/libggml-vulkan.so",
+        "*/faster_whisper/assets/silero_vad_v6.onnx",  # vad_filter=True
+        "*/onnx_asr/preprocessors/data/nemo128.onnx",
+        # The GPU wheel, not the CPU one: both provide the same onnxruntime
+        # package, and only this provider gives Parakeet a CUDA rung.
+        "*/onnxruntime/capi/libonnxruntime_providers_cuda.so",
+        # Either missing is a dead session type.
+        "*/platforms/libqxcb.so",
+        "*/platforms/libqwayland-generic.so",
+        # Without it Wayland starts but no window ever appears.
+        "*/wayland-shell-integration/libxdg-shell.so",
+        # Staged by scripts/build_linux.py: no manylinux sounddevice wheel
+        # carries PortAudio, so the build brings the apt one along.
+        "*/libportaudio.so*",
+    ],
+}
+
+# Excluded on purpose, with the reason, so a refactor cannot quietly re-add
+# them. Checked the other way round: the build fails if one is present.
+EXCLUDED_ON_PURPOSE = {
+    "linux": {
+        # alsa-lib dlopens host plugins (pcm_pipewire among them) against the
+        # host's config; a bundled copy breaks microphone routing silently.
+        # Host requirement: libasound2. libjack.so.0 rides along instead — it
+        # is inert without a JACK server, and leaving it out makes
+        # libportaudio fail to load.
+        "*/libasound.so*": "alsa-lib must come from the host",
+    },
 }
 
 
@@ -91,6 +129,19 @@ def collected(root: Path) -> dict[str, int]:
     return files
 
 
+def check_bundle(files: Iterable[str], platform: str) -> list[str]:
+    """Problems with a build's file list: every load-bearing pattern must
+    match something, and no excluded-on-purpose one may."""
+    names = list(files)
+    problems = [f"missing load-bearing file: {pattern}"
+                for pattern in LOAD_BEARING.get(platform, [])
+                if not any(fnmatch(rel, pattern) for rel in names)]
+    for pattern, reason in EXCLUDED_ON_PURPOSE.get(platform, {}).items():
+        problems += [f"{rel} must not be bundled ({reason})"
+                     for rel in names if fnmatch(rel, pattern)]
+    return problems
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-sync", action="store_true",
@@ -112,12 +163,12 @@ def main() -> int:
         return 1
 
     files = collected(DIST)
-    missing = [pattern for pattern in LOAD_BEARING.get(sys.platform, [])
-               if not any(fnmatch(rel, pattern) for rel in files)]
-    if missing:
-        print("BUILD INCOMPLETE — missing load-bearing files:", file=sys.stderr)
-        for pattern in missing:
-            print(f"  {pattern}", file=sys.stderr)
+    problems = check_bundle(files, "linux" if sys.platform.startswith("linux")
+                            else sys.platform)
+    if problems:
+        print("BUILD INCOMPLETE:", file=sys.stderr)
+        for problem in problems:
+            print(f"  {problem}", file=sys.stderr)
         return 1
 
     total = sum(files.values())

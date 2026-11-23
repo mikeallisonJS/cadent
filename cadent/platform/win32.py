@@ -454,6 +454,9 @@ _advapi32.RegNotifyChangeKeyValue.restype = wintypes.LONG
 
 
 class Win32Desktop:
+    def register_identity(self) -> None:
+        pass
+
     # The taskbar's colour mode. `AppsUseLightTheme` sits beside it and is the
     # one Qt reports through colorScheme(); the two disagree often enough that
     # reading the wrong one puts a black icon on a black taskbar.

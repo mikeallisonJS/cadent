@@ -102,7 +102,7 @@ url = "https://abetlen.github.io/llama-cpp-python/whl/vulkan"
 explicit = true
 
 [tool.uv.sources]
-# Windows and Linux (ADR 0010): the Vulkan index ships no macOS wheels, and PyPI has no macOS
+# Windows and Linux: the Vulkan index ships no macOS wheels, and PyPI has no macOS
 # wheel either (see docs/research/macos-dev-environment.md §2b), so macOS falls
 # through to the PyPI sdist and builds from source (~60 s, Metal enabled by
 # default).

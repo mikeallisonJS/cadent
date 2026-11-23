@@ -14,6 +14,7 @@ import os
 import sys
 
 IS_DARWIN = sys.platform == "darwin"
+IS_LINUX = sys.platform.startswith("linux")
 
 # The identity macOS files the app under: TCC grants (Accessibility, the
 # microphone), the LaunchAgent, Finder, `open -b`. It must stay equal to
@@ -75,12 +76,33 @@ CODESIGN_IDENTITY = os.environ.get("CADENT_CODESIGN_IDENTITY") or None
 ENTITLEMENTS = (os.path.join(SPECPATH, "cadent.entitlements")
                 if CODESIGN_IDENTITY else None)
 
+def portaudio_binaries():
+    """libportaudio on Linux, staged from the build machine (spec m6 §8.5).
+
+    No manylinux sounddevice wheel carries PortAudio, so it is an apt
+    dependency of the *build* and the one load-bearing file with no Windows or
+    macOS twin. Resolved through the loader rather than a pinned path, so the
+    runner's multiarch directory is not a fact written down here."""
+    if not IS_LINUX:
+        return []
+    import ctypes.util
+    import glob
+    name = ctypes.util.find_library("portaudio")
+    if name is None:
+        raise SystemExit("libportaudio not found - apt-get install libportaudio2")
+    for directory in ("/usr/lib/x86_64-linux-gnu", "/usr/lib64", "/usr/lib"):
+        found = sorted(glob.glob(os.path.join(directory, name + "*")))
+        if found:
+            return [(found[0], ".")]
+    raise SystemExit(f"could not locate {name} on disk")
+
+
 a = Analysis(
     [os.path.join(SPECPATH, "entry.py")],
     # The project is installed editable (uv sync), which modulegraph can't
     # follow — resolve the cadent package from the repo root instead.
     pathex=[os.path.dirname(SPECPATH)],
-    binaries=[],
+    binaries=portaudio_binaries(),
     # The mark (#73): rasterised PNGs loaded by QIcon.addFile at runtime, so
     # Qt's SVG image-format plugin never has to survive the freeze.
     datas=[(os.path.join(SPECPATH, "icons"), "icons")],
@@ -91,6 +113,14 @@ a = Analysis(
     excludes=[],
     noarchive=False,
 )
+if IS_LINUX:
+    # alsa-lib dlopens the host's plugins (pcm_pipewire among them) against
+    # the host's config, so a bundled copy breaks microphone routing without
+    # a word. The host's libasound2 is a stated requirement; libjack, by
+    # contrast, stays — libportaudio will not load without it.
+    # scripts/build.py fails the build if one slips through anyway.
+    a.binaries = [b for b in a.binaries if not os.path.basename(b[0]).startswith("libasound.so")]
+
 pyz = PYZ(a.pure)
 
 exe = EXE(

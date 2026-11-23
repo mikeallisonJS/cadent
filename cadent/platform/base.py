@@ -182,6 +182,10 @@ class Capabilities:
     # all (Wayland with neither a data-control protocol nor the Clipboard
     # portal): the ladder is ("type",) and the pane says why. None elsewhere.
     paste_note: str | None = None
+    # The id Qt names this app's windows by (`setDesktopFileName`) — on
+    # Wayland the only source of the `app_id`. None where the OS has no such
+    # notion.
+    desktop_file_name: str | None = None
     # Which GPU-pack edition (a `gpu_pack.EDITIONS` key) serves each speech
     # engine here; an engine absent from the table has no pack to offer.
     gpu_pack_editions: Mapping[str, str] = field(default_factory=dict)
@@ -318,6 +322,12 @@ class SingleInstance(Protocol):
 
 
 class DesktopEnv(Protocol):
+    def register_identity(self) -> None:
+        """Make the desktop know this app by its id (Linux: the launcher
+        entry, icons and the Wayland app_id); a no-op elsewhere. Called once
+        the Qt application exists; never raises."""
+        ...
+
     def open_path(self, path: Path) -> None:
         """Open a file in the user's associated app; never blocks, never raises."""
         ...
