@@ -63,7 +63,7 @@ wheels = [
 
 [[package]]
 name = "cadent"
-version = "0.7.0"
+version = "0.8.0"
 source = { editable = "." }
 dependencies = [
     { name = "faster-whisper" },
@@ -106,7 +106,7 @@ requires-dist = [
     { name = "faster-whisper", specifier = ">=1.1" },
     { name = "jeepney", marker = "sys_platform == 'linux'", specifier = ">=0.9" },
     { name = "jellyfish", specifier = ">=1.3.0" },
-    { name = "llama-cpp-python", marker = "(sys_platform == 'linux' and extra == 'cleanup') or (sys_platform == 'win32' and extra == 'cleanup')", specifier = ">=0.3", index = "https://abetlen.github.io/llama-cpp-python/whl/vulkan" },
+    { name = "llama-cpp-python", marker = "(sys_platform == 'linux' or sys_platform == 'win32') and extra == 'cleanup'", specifier = ">=0.3", index = "https://abetlen.github.io/llama-cpp-python/whl/vulkan" },
     { name = "llama-cpp-python", marker = "sys_platform != 'linux' and sys_platform != 'win32' and extra == 'cleanup'", specifier = ">=0.3" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "onnx-asr", specifier = ">=0.12" },
