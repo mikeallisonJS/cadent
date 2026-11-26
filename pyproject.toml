@@ -61,7 +61,7 @@ cleanup = [
 dev = [
     "pytest>=8.0",
     "ruff>=0.5",
-    "towncrier>=24.8",
+    "towncrier>=26.9",
 ]
 build = [
     "pyinstaller>=6.21",
